@@ -1,0 +1,44 @@
+# ── Python ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ── Virtual environments ────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── IDE / Editor ────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ── PyTorch / Training artifacts ────────────────────────
+checkpoints/
+runs/
+*.pt
+*.pth
+*.onnx
+
+# ── Data ────────────────────────────────────────────────
+data/
+*.wav
+*.mp3
+*.flac
+*.ogg
+
+# ── Logs ────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Misc ────────────────────────────────────────────────
+*.csv
+*.json
+!config.json
