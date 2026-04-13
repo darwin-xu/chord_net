@@ -78,7 +78,9 @@ class Config:
     epochs: int = 50
 
     # Mini-batch size.
-    batch_size: int = 64
+    # Larger batches keep the GPU better utilised; 256 is a good default
+    # for MPS (Apple Silicon).  Reduce if you run out of memory.
+    batch_size: int = 256
 
     # Initial learning rate for Adam.
     learning_rate: float = 1e-3
@@ -90,8 +92,9 @@ class Config:
     # validation set is provided.
     val_split: float = 0.1
 
-    # Number of data-loader workers.
-    num_workers: int = 4
+    # Number of data-loader workers.  0 = main process only (fastest with
+    # memory-mapped data on macOS / MPS).
+    num_workers: int = 0
 
     # Device for training / inference ("cuda", "mps", or "cpu").
     # An empty string means auto-detect.

@@ -244,9 +244,11 @@ def main() -> None:
             print(f"  [{i+1}/{len(rows)}] ERROR {stem}: {e}")
             continue
 
-        # Save labels as .npy and patches as compressed .npz.
+        # Save labels as .npy and patches as uncompressed .npz for fast loading.
+        # Use np.savez (not savez_compressed) so workers can load files without
+        # decompression overhead — this cuts per-file load time ~10x.
         np.save(str(label_out), labels)
-        np.savez_compressed(str(audio_out), patches=patches)
+        np.savez(str(audio_out), patches=patches)
 
         stats[split] += 1
         print(
@@ -259,9 +261,94 @@ def main() -> None:
     print(f"[prepare_maestro] Done.  train={stats['train']}  "
           f"val={stats['val']}  test={stats['test']}")
 
+    # ── Consolidate per-file outputs into single memory-mapped arrays ───
+    print()
+    for split_name in split_map.values():
+        consolidate_split(output_dir, split_name)
+
+
+def consolidate_split(output_dir: Path, split: str) -> None:
+    """Merge per-file .npz + .npy into two big memory-mappable .npy files.
+
+    Creates::
+
+        data/{split}/patches_all.npy   ← (N_total, 1, 229, 32) float32
+        data/{split}/labels_all.npy    ← (N_total, 88)          float32
+
+    These files can be opened with ``np.load(..., mmap_mode='r')`` for
+    zero-copy, O(1) random access during training.
+    """
+    audio_dir = output_dir / split / "audio"
+    label_dir = output_dir / split / "labels"
+    npz_files = sorted(audio_dir.glob("*.npz"))
+    if not npz_files:
+        print(f"  [{split}] No .npz files — skipping consolidation.")
+        return
+
+    patches_out = output_dir / split / "patches_all.npy"
+    labels_out = output_dir / split / "labels_all.npy"
+
+    # Skip if already consolidated.
+    if patches_out.exists() and labels_out.exists():
+        print(f"  [{split}] Already consolidated — skipping.")
+        return
+
+    # First pass: count total patches to pre-allocate.
+    total = 0
+    for npz_path in npz_files:
+        stem = npz_path.stem
+        lbl = label_dir / f"{stem}.npy"
+        if not lbl.exists():
+            continue
+        n = np.load(str(lbl), mmap_mode="r").shape[0]
+        total += n
+
+    if total == 0:
+        print(f"  [{split}] 0 patches — skipping.")
+        return
+
+    print(f"  [{split}] Consolidating {total:,} patches from "
+          f"{len(npz_files)} files …")
+
+    # Allocate on disk with np.lib.format.
+    p_shape = (total, 1, CFG.n_mels, CFG.n_time_frames)
+    l_shape = (total, CFG.n_notes)
+
+    # Create empty files with the right shape, then memory-map for writing.
+    _create_empty_npy(str(patches_out), p_shape, np.float32)
+    _create_empty_npy(str(labels_out), l_shape, np.float32)
+
+    p_mmap = np.load(str(patches_out), mmap_mode="r+")
+    l_mmap = np.load(str(labels_out), mmap_mode="r+")
+
+    offset = 0
+    for npz_path in npz_files:
+        stem = npz_path.stem
+        lbl_path = label_dir / f"{stem}.npy"
+        if not lbl_path.exists():
+            continue
+        patches = np.load(str(npz_path))["patches"]
+        labels = np.load(str(lbl_path))
+        n = patches.shape[0]
+        p_mmap[offset : offset + n] = patches
+        l_mmap[offset : offset + n] = labels
+        offset += n
+
+    # Flush to disk.
+    del p_mmap, l_mmap
+    print(f"  [{split}] Wrote {patches_out} and {labels_out}")
+
+
+def _create_empty_npy(path: str, shape: tuple, dtype) -> None:
+    """Create a .npy file with a valid header and pre-allocated zero data."""
+    arr = np.lib.format.open_memmap(
+        path, mode="w+", dtype=dtype, shape=shape,
+    )
+    del arr  # flush header
+
 
 # ────────────────────────────────────────────────────────────────────────
-# MaestroDataset – a Dataset that loads preprocessed .npz / .npy files
+# MaestroDataset – memory-mapped Dataset for fast random access
 # ────────────────────────────────────────────────────────────────────────
 
 import torch
@@ -269,15 +356,16 @@ from torch.utils.data import Dataset
 
 
 class MaestroDataset(Dataset):
-    """PyTorch Dataset that reads preprocessed MAESTRO data.
+    """PyTorch Dataset backed by consolidated memory-mapped ``.npy`` files.
 
-    Expects the layout produced by ``prepare_maestro.py``::
+    After ``prepare_maestro.py`` runs, each split directory contains::
 
-        data/{split}/audio/<stem>.npz   ← contains 'patches' array
-        data/{split}/labels/<stem>.npy  ← (N, 88)
+        data/{split}/patches_all.npy   ← (N, 1, 229, 32) float32
+        data/{split}/labels_all.npy    ← (N, 88)          float32
 
-    All files are loaded lazily: only the file list is scanned at init
-    time, and individual files are memory-mapped on access.
+    These are opened with ``mmap_mode='r'`` so that the OS pages data in
+    on demand — no per-file open overhead, no decompression, and the OS
+    page cache handles caching automatically.
 
     Parameters
     ----------
@@ -288,38 +376,33 @@ class MaestroDataset(Dataset):
     """
 
     def __init__(self, data_dir: str | Path, split: str = "train") -> None:
-        self.audio_dir = Path(data_dir) / split / "audio"
-        self.label_dir = Path(data_dir) / split / "labels"
+        split_dir = Path(data_dir) / split
+        patches_path = split_dir / "patches_all.npy"
+        labels_path = split_dir / "labels_all.npy"
 
-        # Discover .npz files.
-        npz_files = sorted(self.audio_dir.glob("*.npz"))
-        if not npz_files:
+        if not patches_path.exists() or not labels_path.exists():
             raise FileNotFoundError(
-                f"No .npz files found in {self.audio_dir}. "
+                f"Consolidated files not found in {split_dir}. "
                 f"Run prepare_maestro.py first."
             )
 
-        # Build a flat index: (npz_path, label_path, local_index).
-        self._index: List[Tuple[Path, Path, int]] = []
-        for npz_path in npz_files:
-            stem = npz_path.stem
-            label_path = self.label_dir / f"{stem}.npy"
-            if not label_path.exists():
-                continue
-            # Peek at the label file to get the number of patches.
-            n = np.load(str(label_path), mmap_mode="r").shape[0]
-            for j in range(n):
-                self._index.append((npz_path, label_path, j))
+        # Memory-mapped read-only access — data is paged in by the OS.
+        self._patches = np.load(str(patches_path), mmap_mode="r")
+        self._labels = np.load(str(labels_path), mmap_mode="r")
+
+        assert self._patches.shape[0] == self._labels.shape[0], (
+            f"Patch/label count mismatch: "
+            f"{self._patches.shape[0]} vs {self._labels.shape[0]}"
+        )
 
     def __len__(self) -> int:
-        return len(self._index)
+        return self._patches.shape[0]
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        npz_path, label_path, local_idx = self._index[idx]
-        patches = np.load(str(npz_path), mmap_mode="r")["patches"]
-        labels = np.load(str(label_path), mmap_mode="r")
-        patch = torch.from_numpy(np.array(patches[local_idx]))  # (1, F, T)
-        label = torch.from_numpy(np.array(labels[local_idx]))   # (88,)
+        # np.array() copies from the mmap into a contiguous buffer so
+        # the tensor doesn't hold a reference to the entire mmap region.
+        patch = torch.from_numpy(np.array(self._patches[idx]))  # (1, F, T)
+        label = torch.from_numpy(np.array(self._labels[idx]))   # (88,)
         return patch, label
 
 
