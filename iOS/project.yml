@@ -1,0 +1,35 @@
+# XcodeGen project spec for ChordNet iOS app.
+#
+# Generate the Xcode project:
+#   brew install xcodegen   # one-time
+#   cd iOS && xcodegen generate
+#   open ChordNet.xcodeproj
+
+name: ChordNet
+
+options:
+  bundleIdPrefix: com.chordnet
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: targeted
+
+targets:
+  ChordNet:
+    type: application
+    platform: iOS
+    sources:
+      - path: ChordNet
+    settings:
+      base:
+        INFOPLIST_FILE: ChordNet/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.chordnet.app
+        TARGETED_DEVICE_FAMILY: "1"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        DEVELOPMENT_TEAM: ""

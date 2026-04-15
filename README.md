@@ -156,12 +156,12 @@ python train.py \
     --data-dir data \
     --maestro \
     --epochs 50 \
-    --batch-size 64 \
+    --batch-size 256 \
     --lr 1e-3
 ```
 
 The `--maestro` flag tells the training script to load the preprocessed
-`.npz` + `.npy` files via `MaestroDataset` (from `prepare_maestro.py`).
+memory-mapped `.npy` files via `MaestroDataset` (from `prepare_maestro.py`).
 
 ### 3.2 Train with raw WAV + .npy labels
 
@@ -169,7 +169,7 @@ The `--maestro` flag tells the training script to load the preprocessed
 python train.py \
     --data-dir data \
     --epochs 50 \
-    --batch-size 64 \
+    --batch-size 256 \
     --lr 1e-3
 ```
 
@@ -183,11 +183,12 @@ expects raw `.wav` in `audio/` and pre-built `.npy` in `labels/`.
 | `--data-dir` | `data` | Root data directory |
 | `--checkpoint-dir` | `checkpoints` | Where to save model checkpoints |
 | `--epochs` | 50 | Number of training epochs |
-| `--batch-size` | 64 | Mini-batch size |
+| `--batch-size` | 256 | Mini-batch size |
 | `--lr` | 1e-3 | Learning rate (Adam) |
 | `--weight-decay` | 1e-4 | L2 regularisation |
-| `--num-workers` | 4 | DataLoader worker processes |
+| `--num-workers` | 0 | DataLoader worker processes |
 | `--maestro` | off | Use MaestroDataset instead of ChordDataset |
+| `--resume` | — | Path to checkpoint (`.pt`) to resume training from |
 
 ### 3.4 What Happens During Training
 
@@ -200,7 +201,24 @@ expects raw `.wav` in `audio/` and pre-built `.npy` in `labels/`.
   - `checkpoints/best.pt` — model with the highest validation F1.
   - `checkpoints/last.pt` — model state at the final epoch.
 
-### 3.5 Expected Output
+### 3.5 Resuming Training
+
+To continue training from a previous run, use `--resume`:
+
+```bash
+python train.py \
+    --data-dir data \
+    --maestro \
+    --epochs 50 \
+    --resume checkpoints/last.pt
+```
+
+This restores the model, optimiser, and scheduler state and resumes from
+the next epoch.  `--epochs` is the **total** epoch count, not the number
+of additional epochs (e.g. if the checkpoint is from epoch 3 and you pass
+`--epochs 50`, training continues from epoch 4 to 50).
+
+### 3.6 Expected Output
 
 ```
 [ChordNet] Using device: mps

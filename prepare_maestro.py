@@ -373,9 +373,16 @@ class MaestroDataset(Dataset):
         Root data directory (e.g. ``data``).
     split : str
         One of ``"train"``, ``"val"``, ``"test"``.
+    augment : bool
+        If ``True``, apply random noise augmentation (training only).
     """
 
-    def __init__(self, data_dir: str | Path, split: str = "train") -> None:
+    def __init__(
+        self,
+        data_dir: str | Path,
+        split: str = "train",
+        augment: bool = False,
+    ) -> None:
         split_dir = Path(data_dir) / split
         patches_path = split_dir / "patches_all.npy"
         labels_path = split_dir / "labels_all.npy"
@@ -389,6 +396,7 @@ class MaestroDataset(Dataset):
         # Memory-mapped read-only access — data is paged in by the OS.
         self._patches = np.load(str(patches_path), mmap_mode="r")
         self._labels = np.load(str(labels_path), mmap_mode="r")
+        self._augment = augment
 
         assert self._patches.shape[0] == self._labels.shape[0], (
             f"Patch/label count mismatch: "
@@ -401,9 +409,54 @@ class MaestroDataset(Dataset):
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         # np.array() copies from the mmap into a contiguous buffer so
         # the tensor doesn't hold a reference to the entire mmap region.
-        patch = torch.from_numpy(np.array(self._patches[idx]))  # (1, F, T)
+        patch = np.array(self._patches[idx], dtype=np.float32)  # (1, F, T)
         label = torch.from_numpy(np.array(self._labels[idx]))   # (88,)
-        return patch, label
+
+        if self._augment:
+            patch = self._apply_augmentation(patch)
+
+        return torch.from_numpy(patch), label
+
+    @staticmethod
+    def _apply_augmentation(patch: np.ndarray) -> np.ndarray:
+        """Apply random augmentations to a log-mel spectrogram patch.
+
+        Applied in the log-mel domain (after log):
+        - Additive Gaussian noise (simulates mic / ambient noise)
+        - Gain variation (simulates varying distances / volumes)
+        - Frequency masking (SpecAugment-style, improves generalisation)
+        - Time masking (SpecAugment-style)
+        """
+        rng = np.random.default_rng()
+
+        # 1. Additive noise in log-mel domain (50% chance).
+        #    log(mel + noise) ≈ log_mel + noise_in_log_domain
+        if rng.random() < 0.5:
+            noise_std = rng.uniform(0.05, 0.5)
+            patch = patch + rng.normal(0, noise_std, size=patch.shape).astype(
+                np.float32
+            )
+
+        # 2. Gain variation (random scale in log domain = shift).
+        if rng.random() < 0.5:
+            gain = rng.uniform(-1.0, 1.0)
+            patch = patch + gain
+
+        # 3. Frequency masking (SpecAugment): zero out a band of mel bins.
+        if rng.random() < 0.3:
+            n_mels = patch.shape[1]
+            mask_width = rng.integers(1, max(2, n_mels // 8))
+            start = rng.integers(0, n_mels - mask_width)
+            patch[:, start : start + mask_width, :] = patch.mean()
+
+        # 4. Time masking: zero out a few consecutive frames.
+        if rng.random() < 0.3:
+            n_frames = patch.shape[2]
+            mask_width = rng.integers(1, max(2, n_frames // 4))
+            start = rng.integers(0, n_frames - mask_width)
+            patch[:, :, start : start + mask_width] = patch.mean()
+
+        return patch
 
 
 # ────────────────────────────────────────────────────────────────────────

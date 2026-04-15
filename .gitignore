@@ -42,3 +42,9 @@ logs/
 *.csv
 *.json
 !config.json
+
+# ── iOS / Xcode ─────────────────────────────────────────
+iOS/ChordNet.xcodeproj/
+iOS/ChordNet/ChordNetModel.mlpackage/
+iOS/build/
+*.xcuserdata
