@@ -1,0 +1,17 @@
+.git/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+data/
+checkpoints/
+iOS/
+*.DS_Store
+*.wav
+*.mp3
+*.flac
+*.pt
+*.pth
+*.onnx
+runs/
+logs/

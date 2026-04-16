@@ -48,3 +48,7 @@ iOS/ChordNet.xcodeproj/
 iOS/ChordNet/ChordNetModel.mlpackage/
 iOS/build/
 *.xcuserdata
+
+# ── Vertex AI / Docker ───────────────────────────────────
+# (Dockerfile and vertex/ scripts ARE tracked; outputs are not)
+vertex/__pycache__/

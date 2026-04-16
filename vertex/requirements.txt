@@ -1,0 +1,4 @@
+# Local submission dependencies only (not needed inside the container).
+# Install with:  pip install -r vertex/requirements.txt
+google-cloud-aiplatform>=1.40
+google-cloud-storage>=2.10
