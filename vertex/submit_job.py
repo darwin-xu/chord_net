@@ -17,6 +17,7 @@ Usage:
 """
 
 import argparse
+import os
 
 from google.cloud import aiplatform
 
@@ -69,7 +70,7 @@ def main() -> None:
     mc = MACHINE_CONFIGS[args.machine]
     batch_size = args.batch_size if args.batch_size > 0 else mc["batch_size_hint"]
 
-    aiplatform.init(project=args.project, location=args.region)
+    aiplatform.init(project=args.project, location=args.region, staging_bucket=f"gs://{args.bucket}")
 
     job = aiplatform.CustomContainerTrainingJob(
         display_name=args.job_name,
@@ -97,9 +98,11 @@ def main() -> None:
         f"https://console.cloud.google.com/vertex-ai/training/custom-jobs"
         f"?project={args.project}"
     )
-    print(f"Job submitted: {job.resource_name}")
+    print(f"Job submitted: {args.job_name}")
     print(f"Monitor at:    {console_url}")
-    print(f"Checkpoints → gs://{args.bucket}/outputs/.../  (also gs://{args.bucket}/checkpoints/)")
+    print(f"Checkpoints → gs://{args.bucket}/outputs/  (also gs://{args.bucket}/checkpoints/)")
+    # Force-exit to stop the SDK background polling thread.
+    os._exit(0)
 
 
 if __name__ == "__main__":

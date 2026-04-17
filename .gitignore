@@ -52,3 +52,5 @@ iOS/build/
 # ── Vertex AI / Docker ───────────────────────────────────
 # (Dockerfile and vertex/ scripts ARE tracked; outputs are not)
 vertex/__pycache__/
+# ── Training logs (generated, not source) ────────────────────
+logs/

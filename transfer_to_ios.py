@@ -27,6 +27,9 @@ import torch.nn as nn
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config import CFG
 from model import ChordNet
+from model_resnet import ChordResNet
+
+ARCH_REGISTRY = {"chordnet": ChordNet, "resnet": ChordResNet}
 
 
 class _ChordNetExport(nn.Module):
@@ -48,8 +51,15 @@ def main() -> None:
     parser.add_argument(
         "--checkpoint",
         type=str,
-        default="checkpoints/best.pt",
-        help="Path to a .pt checkpoint (default: checkpoints/best.pt)",
+        default="checkpoints/best_resnet.pt",
+        help="Path to a .pt checkpoint (default: checkpoints/best_resnet.pt)",
+    )
+    parser.add_argument(
+        "--arch",
+        type=str,
+        default="resnet",
+        choices=list(ARCH_REGISTRY),
+        help="Model architecture to load (default: resnet)",
     )
     parser.add_argument(
         "--output",
@@ -81,11 +91,16 @@ def main() -> None:
     print(f"Loading checkpoint: {ckpt_path}")
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
 
-    model = ChordNet()
+    saved_arch = ckpt.get("arch", "chordnet")
+    if saved_arch != args.arch:
+        print(f"WARNING: checkpoint arch='{saved_arch}' but --arch='{args.arch}'. Using '{saved_arch}'.")
+        args.arch = saved_arch
+
+    model = ARCH_REGISTRY[args.arch]()
     model.load_state_dict(ckpt["model_state_dict"])
     model.eval()
 
-    export_model = _ChordNetExport(model)
+    export_model = _ChordNetExport(model)  # wraps any arch — sigmoid applied inside
     export_model.eval()
 
     # ── Trace ───────────────────────────────────────────────────────────
@@ -117,7 +132,13 @@ def main() -> None:
     print(f"  Input : mel_spectrogram  shape (1, 1, {CFG.n_mels}, {CFG.n_time_frames})")
     print(f"  Output: probabilities    shape (1, {CFG.n_notes})  [sigmoid applied]")
     if ckpt.get("val_f1"):
-        print(f"  Source checkpoint F1 = {ckpt['val_f1']:.4f}")
+        print(f"  Checkpoint F1@0.5     = {ckpt['val_f1']:.4f}")
+    if ckpt.get("val_f1_opt"):
+        print(f"  Checkpoint best F1    = {ckpt['val_f1_opt']:.4f}")
+    best_t = ckpt.get("best_threshold", 0.5)
+    print(f"  Best threshold        = {best_t:.2f}")
+    print(f"")
+    print(f"  *** In iOS AudioEngine.swift, set the inference threshold to {best_t:.2f} ***")
 
 
 if __name__ == "__main__":
