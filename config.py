@@ -103,7 +103,7 @@ class Config:
     # ── Inference ───────────────────────────────────────────────────────
     # Sigmoid threshold: a note is considered "active" when its
     # probability exceeds this value.
-    inference_threshold: float = 0.5
+    inference_threshold: float = 0.95
 
 
 # ── Global singleton ────────────────────────────────────────────────────

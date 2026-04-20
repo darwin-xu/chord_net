@@ -95,14 +95,12 @@ def main() -> None:
     )
 
     console_url = (
-        f"https://console.cloud.google.com/vertex-ai/training/custom-jobs"
+        f"https://console.cloud.google.com/vertex-ai/locations/{args.region}/training/custom-jobs"
         f"?project={args.project}"
     )
     print(f"Job submitted: {args.job_name}")
     print(f"Monitor at:    {console_url}")
     print(f"Checkpoints → gs://{args.bucket}/outputs/  (also gs://{args.bucket}/checkpoints/)")
-    # Force-exit to stop the SDK background polling thread.
-    os._exit(0)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@
 #   docker push    REGION-docker.pkg.dev/PROJECT/chord-net/trainer:latest
 # ──────────────────────────────────────────────────────────────────────────────
 FROM pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime
+#FROM gcr.io/complete-tube-271302/pytorch-base:2.3.0-cuda12.1
 
 WORKDIR /app
 

@@ -38,15 +38,15 @@ final class AudioEngine: ObservableObject, @unchecked Sendable {
     private let nMels      = 229
     private let nTimeFrames = 32
     private let nNotes     = 88
-    private let threshold: Float = 0.5
+    private let threshold: Float = 0.95
     /// Minimum RMS below which inference is skipped (silence / ambient noise).
     private let energyGateRMS: Float = 0.008
     /// Minimum seconds between consecutive inferences.
     private let inferenceInterval: CFAbsoluteTime = 0.30
 
     /// Number of audio samples needed for one inference patch
-    /// (center=false):  nFFT + (nTimeFrames - 1) * hopLength
-    private var requiredSamples: Int { nFFT + (nTimeFrames - 1) * hopLength }  // 17920
+    /// (center=true):  (nTimeFrames - 1) * hopLength
+    private var requiredSamples: Int { (nTimeFrames - 1) * hopLength }  // 15872
 
     // MARK: - Note names (MIDI 21–108, matching inference.py)
 
@@ -297,8 +297,10 @@ final class AudioEngine: ObservableObject, @unchecked Sendable {
         }
 
         let notes = detect(audio: audio)
-        DispatchQueue.main.async { [weak self] in
-            self?.detectedNotes = notes
+        if !notes.isEmpty {
+            DispatchQueue.main.async { [weak self] in
+                self?.detectedNotes = notes
+            }
         }
     }
 

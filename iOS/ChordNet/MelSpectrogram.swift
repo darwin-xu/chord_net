@@ -73,11 +73,18 @@ final class MelSpectrogram: @unchecked Sendable {
 
     // MARK: - Public API
 
-    /// Compute the log-Mel spectrogram for `samples` (center=false).
+    /// Compute the log-Mel spectrogram for `samples` (center=true).
     ///
+    /// Matches librosa's default: the signal is zero-padded by nFFT/2 on each
+    /// side before framing, so frame `t` is centred at sample `t * hopLength`.
     /// Returns `nil` if the input is too short for even one frame.
     func compute(samples: [Float]) -> Result? {
-        let nFrames = 1 + (samples.count - nFFT) / hopLength
+        // Zero-pad by nFFT/2 on each side (center=true, matches librosa default).
+        let pad = nFFT / 2
+        var padded = [Float](repeating: 0, count: samples.count + nFFT)
+        padded.replaceSubrange(pad ..< pad + samples.count, with: samples)
+
+        let nFrames = 1 + samples.count / hopLength
         guard nFrames > 0 else { return nil }
 
         // Scratch buffers (reused across frames).
@@ -93,7 +100,7 @@ final class MelSpectrogram: @unchecked Sendable {
             let start = f * hopLength
 
             // 1. Apply Hann window.
-            samples.withUnsafeBufferPointer { samplesPtr in
+            padded.withUnsafeBufferPointer { samplesPtr in
                 vDSP_vmul(
                     samplesPtr.baseAddress! + start, 1,
                     window, 1,
