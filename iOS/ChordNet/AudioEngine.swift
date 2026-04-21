@@ -66,6 +66,7 @@ final class AudioEngine: ObservableObject, @unchecked Sendable {
     private var converterInputFormat: AVAudioFormat?
     private let melSpec: MelSpectrogram
     private var model: MLModel?
+    private var modelComputeUnits: MLComputeUnits?
 
     /// Serial queue that owns `sampleBuffer` and `lastInferenceTime`.
     private let processingQueue = DispatchQueue(
@@ -139,22 +140,91 @@ final class AudioEngine: ObservableObject, @unchecked Sendable {
             print("[ChordNet] CoreML model not found in bundle - run transfer_to_ios.py first")
             return
         }
-        do {
-            let config = MLModelConfiguration()
-            config.computeUnits = .all
-            model = try MLModel(contentsOf: url, configuration: config)
-            statusMessage = "Tap Start to begin"
-        } catch {
-            statusMessage = "Model failed to load."
-            print("[ChordNet] Failed to load model: \(error)")
+
+#if targetEnvironment(simulator)
+        let computeUnitsPriority: [MLComputeUnits] = [.cpuOnly]
+#else
+        let computeUnitsPriority: [MLComputeUnits] = [.cpuAndNeuralEngine, .cpuOnly]
+#endif
+
+        for units in computeUnitsPriority {
+            do {
+                let config = MLModelConfiguration()
+                config.computeUnits = units
+                model = try MLModel(contentsOf: url, configuration: config)
+                modelComputeUnits = units
+                statusMessage = "Tap Start to begin"
+                print("[ChordNet] Loaded model with compute units: \(computeUnitsName(units))")
+                return
+            } catch {
+                print("[ChordNet] Failed loading model with \(units): \(error)")
+            }
         }
+
+        model = nil
+        modelComputeUnits = nil
+        statusMessage = "Model failed to load."
+    }
+
+    private func computeUnitsName(_ units: MLComputeUnits) -> String {
+        switch units {
+        case .cpuOnly:
+            return "CPU only"
+        case .cpuAndGPU:
+            return "CPU + GPU"
+        case .cpuAndNeuralEngine:
+            return "CPU + Neural Engine"
+        case .all:
+            return "All"
+        @unknown default:
+            return "Unknown"
+        }
+    }
+
+    private func copyPCMBuffer(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else {
+            return nil
+        }
+
+        copy.frameLength = buffer.frameLength
+        let channelCount = Int(buffer.format.channelCount)
+        let frameCount = Int(buffer.frameLength)
+
+        switch buffer.format.commonFormat {
+        case .pcmFormatFloat32:
+            guard let src = buffer.floatChannelData, let dst = copy.floatChannelData else { return nil }
+            for channel in 0 ..< channelCount {
+                dst[channel].update(from: src[channel], count: frameCount)
+            }
+        case .pcmFormatFloat64:
+            return nil
+        case .pcmFormatInt16:
+            guard let src = buffer.int16ChannelData, let dst = copy.int16ChannelData else { return nil }
+            for channel in 0 ..< channelCount {
+                dst[channel].update(from: src[channel], count: frameCount)
+            }
+        case .pcmFormatInt32:
+            guard let src = buffer.int32ChannelData, let dst = copy.int32ChannelData else { return nil }
+            for channel in 0 ..< channelCount {
+                dst[channel].update(from: src[channel], count: frameCount)
+            }
+        case .otherFormat:
+            return nil
+        @unknown default:
+            return nil
+        }
+
+        return copy
     }
 
     private func startEngine() {
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.record, mode: .measurement)
+#if !targetEnvironment(simulator)
             try session.setPreferredSampleRate(targetSR)
+            try session.setPreferredIOBufferDuration(0.023)
+#endif
             try session.setActive(true)
 
             let inputNode = engine.inputNode
@@ -168,9 +238,15 @@ final class AudioEngine: ObservableObject, @unchecked Sendable {
             audioConverter = nil
             converterInputFormat = nil
 
+#if targetEnvironment(simulator)
+            let tapBufferSize = AVAudioFrameCount(4096)
+#else
+            let tapBufferSize = AVAudioFrameCount(nFFT)
+#endif
+
             inputNode.installTap(
                 onBus: 0,
-                bufferSize: AVAudioFrameCount(nFFT),
+                bufferSize: tapBufferSize,
                 format: inputFormat
             ) { [weak self] buffer, _ in
                 self?.handleBuffer(buffer)
@@ -185,12 +261,17 @@ final class AudioEngine: ObservableObject, @unchecked Sendable {
         }
     }
 
-    /// Called on the audio I/O thread – converts to the model sample rate and dispatches.
+    /// Called on the audio I/O thread – keeps work minimal, then dispatches.
     private func handleBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard let samples = samplesAtModelRate(from: buffer), !samples.isEmpty else { return }
+        guard let bufferCopy = copyPCMBuffer(buffer) else { return }
 
         processingQueue.async { [weak self] in
-            self?.appendAndProcess(samples)
+            guard let self,
+                  let samples = self.samplesAtModelRate(from: bufferCopy),
+                  !samples.isEmpty
+            else { return }
+
+            self.appendAndProcess(samples)
         }
     }
 
