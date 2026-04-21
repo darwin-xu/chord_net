@@ -9,45 +9,28 @@ struct WaveformEnvelopeView: View {
 
     let envelope: [CGFloat]
     let isListening: Bool
-    let noteLabel: String
-    let detailLabel: String
+    let headline: String
     let style: Style
 
     init(
         envelope: [CGFloat],
         isListening: Bool,
-        noteLabel: String,
-        detailLabel: String,
+        headline: String,
         style: Style = .envelopeBars
     ) {
         self.envelope = envelope
         self.isListening = isListening
-        self.noteLabel = noteLabel
-        self.detailLabel = detailLabel
+        self.headline = headline
         self.style = style
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Live Envelope")
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.white.opacity(0.78))
-
-                    Text(noteLabel)
-                        .font(.system(size: 34, weight: .heavy, design: .rounded))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                }
-
-                Spacer()
-
-                Text(detailLabel)
-                    .font(.system(size: 15, weight: .medium, design: .rounded))
-                    .foregroundStyle(isListening ? Color(red: 0.60, green: 0.94, blue: 0.77) : Color.white.opacity(0.70))
-            }
+            Text(headline)
+                .font(.system(size: 30, weight: .heavy, design: .rounded))
+                .foregroundStyle(isListening ? .white : Color.white.opacity(0.78))
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
 
             GeometryReader { geometry in
                 if isFlatEnvelope {
@@ -68,7 +51,7 @@ struct WaveformEnvelopeView: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 18)
         .frame(maxWidth: .infinity)
-        .frame(height: 175)
+        .frame(height: 150)
         .background(background)
         .overlay(alignment: .bottom) {
             Rectangle()
@@ -290,8 +273,7 @@ struct WaveformEnvelopeView: View {
     WaveformEnvelopeView(
         envelope: [0.10, 0.16, 0.28, 0.52, 0.76, 0.91, 0.74, 0.48, 0.26, 0.18, 0.24, 0.38, 0.62, 0.84, 0.70, 0.44, 0.22, 0.12],
         isListening: true,
-        noteLabel: "C4 · E4 · G4",
-        detailLabel: "261.6 Hz",
+        headline: "C4 · E4 · G4",
         style: .neonThreads
     )
 }

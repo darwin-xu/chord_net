@@ -96,7 +96,6 @@ private struct StaffCanvas: View {
             let usableHeight = max(height - topPad - bottomPad, 120)
             let stepSize = usableHeight / 24
             let lineGap = stepSize * 2
-            let labelY: CGFloat = 22
             let smuflBrace = String(UnicodeScalar(0xE000)!)
             let smuflTrebleClef = String(UnicodeScalar(0xE050)!)
             let smuflBassClef = String(UnicodeScalar(0xE062)!)
@@ -219,18 +218,6 @@ private struct StaffCanvas: View {
                                 .position(x: noteX - accidentalOffsetX, y: noteY - 2)
                         }
                     }
-                }
-
-                if let last = queue.notes.last {
-                    Text(last.note.displayName)
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .position(x: width * 0.42, y: labelY)
-                } else {
-                    Text("Waiting for notes")
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                        .position(x: width * 0.44, y: labelY)
                 }
             }
             .animation(.easeInOut(duration: 0.3), value: noteCount)

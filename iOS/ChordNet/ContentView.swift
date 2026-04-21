@@ -3,23 +3,19 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var engine = AudioEngine()
     @StateObject private var staffNoteQueue = NoteQueue()
-    @State private var staffHeightRatio: CGFloat = 0.35
-    @State private var dragStartStaffHeightRatio: CGFloat?
 
     private let waveformStyle: WaveformEnvelopeView.Style = .neonThreads
-    private let minStaffHeightRatio: CGFloat = 0.20
-    private let maxStaffHeightRatio: CGFloat = 0.60
+    private let staffHeightRatio: CGFloat = 0.35
 
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
-                statusBar(containerHeight: geometry.size.height)
+                statusBar
 
                 WaveformEnvelopeView(
                     envelope: waveformEnvelope,
                     isListening: engine.isRunning,
-                    noteLabel: waveformNoteLabel,
-                    detailLabel: engine.statusMessage,
+                    headline: waveformHeadline,
                     style: waveformStyle
                 )
 
@@ -51,8 +47,8 @@ struct ContentView: View {
         }
     }
 
-    private func statusBar(containerHeight: CGFloat) -> some View {
-        VStack(spacing: 8) {
+    private var statusBar: some View {
+        VStack(spacing: 0) {
             HStack {
                 Spacer()
 
@@ -60,37 +56,11 @@ struct ContentView: View {
                     .font(.system(size: 20, weight: .semibold, design: .rounded))
                     .foregroundStyle(statusColor)
 
-                Text("\(Int(staffHeightRatio * 100))%")
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-
                 Spacer()
             }
-
-            Capsule(style: .continuous)
-                .fill(Color.black.opacity(0.22))
-                .frame(width: 72, height: 6)
-                .contentShape(Rectangle())
-                .gesture(staffResizeGesture(containerHeight: containerHeight))
         }
         .frame(height: 64)
         .background(Color.white.opacity(0.92))
-    }
-
-    private func staffResizeGesture(containerHeight: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                if dragStartStaffHeightRatio == nil {
-                    dragStartStaffHeightRatio = staffHeightRatio
-                }
-
-                let startingRatio = dragStartStaffHeightRatio ?? staffHeightRatio
-                let proposedRatio = startingRatio + (value.translation.height / max(containerHeight, 1))
-                staffHeightRatio = min(max(proposedRatio, minStaffHeightRatio), maxStaffHeightRatio)
-            }
-            .onEnded { _ in
-                dragStartStaffHeightRatio = nil
-            }
     }
 
     private var controlsPanel: some View {
@@ -171,8 +141,8 @@ struct ContentView: View {
         return values.isEmpty ? Array(repeating: 0, count: 32) : values
     }
 
-    private var waveformNoteLabel: String {
-        guard !engine.detectedNotes.isEmpty else { return "No chord" }
+    private var waveformHeadline: String {
+        guard !engine.detectedNotes.isEmpty else { return engine.statusMessage }
         return engine.detectedNotes.joined(separator: " · ")
     }
 

@@ -5,10 +5,14 @@ struct PianoKeyboardView: View {
 
     private let whiteKeys = KeyboardLayout.visibleWhiteKeys
     private let blackKeys = KeyboardLayout.visibleBlackKeys
+    private let horizontalInset: CGFloat = 8
+    private let topInset: CGFloat = 22
+    private let bottomInset: CGFloat = 16
 
     var body: some View {
         GeometryReader { geometry in
-            let whiteKeyWidth = geometry.size.width / CGFloat(whiteKeys.count)
+            let keybedWidth = max(1, geometry.size.width - horizontalInset * 2)
+            let whiteKeyWidth = keybedWidth / CGFloat(whiteKeys.count)
             let blackKeyWidth = whiteKeyWidth * 0.62
             let blackKeyHeight = geometry.size.height * 0.52
 
@@ -38,12 +42,12 @@ struct PianoKeyboardView: View {
                             }
                     }
                 }
-                .padding(.top, 22)
-                .padding(.horizontal, 8)
-                .padding(.bottom, 16)
+                .padding(.top, topInset)
+                .padding(.horizontal, horizontalInset)
+                .padding(.bottom, bottomInset)
 
                 ForEach(blackKeys) { note in
-                    let offset = CGFloat(KeyboardLayout.visibleWhiteKeyOffset(for: note.midiNumber)) * whiteKeyWidth - (blackKeyWidth / 2) + 8
+                    let offset = horizontalInset + CGFloat(KeyboardLayout.visibleWhiteKeyOffset(for: note.midiNumber)) * whiteKeyWidth - (blackKeyWidth / 2)
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
                         .fill(fillColor(for: note, defaultColor: Color.black.opacity(0.84)))
                         .frame(width: blackKeyWidth, height: blackKeyHeight)
@@ -52,7 +56,7 @@ struct PianoKeyboardView: View {
                                 .fill(Color.white.opacity(0.08))
                                 .frame(height: 10)
                         }
-                        .offset(x: offset, y: 22)
+                        .offset(x: offset, y: topInset)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
