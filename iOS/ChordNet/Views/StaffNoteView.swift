@@ -110,7 +110,8 @@ private struct StaffCanvas: View {
             let braceSpan = bassBottomY - trebleTopY
             let braceBaseSize = lineGap * 10
             let braceVerticalScale = max(braceSpan / (braceBaseSize * 1.45), 1)
-            let braceWidth = braceBaseSize * 0.36
+            let braceFont = UIFont(name: "Bravura", size: braceBaseSize) ?? .systemFont(ofSize: braceBaseSize)
+            let braceWidth = glyphMetrics(for: smuflBrace, font: braceFont).bounds.width
             let braceCenterX = margin + braceWidth / 2
             
             // X position for the sheet bar
@@ -118,11 +119,13 @@ private struct StaffCanvas: View {
             
             let clefLeftX: CGFloat = barLineX + 10
             let trebleClefSize = lineGap * 4
-            let trebleClefWidth = trebleClefSize * 0.46
+            let trebleClefFont = UIFont(name: "Bravura", size: trebleClefSize) ?? .systemFont(ofSize: trebleClefSize)
+            let trebleClefWidth = glyphMetrics(for: smuflTrebleClef, font: trebleClefFont).bounds.width
             let trebleClefCenterX = clefLeftX + trebleClefWidth / 2
 
             let bassClefSize = lineGap * 4
-            let bassClefWidth = bassClefSize * 0.50
+            let bassClefFont = UIFont(name: "Bravura", size: bassClefSize) ?? .systemFont(ofSize: bassClefSize)
+            let bassClefWidth = glyphMetrics(for: smuflBassClef, font: bassClefFont).bounds.width
             let bassClefCenterX = clefLeftX + bassClefWidth / 2
             let noteGlyphSize = lineGap * 3.2
             
@@ -239,6 +242,40 @@ private struct StaffCanvas: View {
             .position(x: startX + (width - startX - rightMargin) / 2, y: y)
     }
 }
+
+private func glyphMetrics(for text: String, font: UIFont) -> (bounds: CGRect, lineSize: CGSize, offset: CGSize) {
+    guard !text.isEmpty else {
+        return (.zero, .zero, .zero)
+    }
+
+    let attributes: [NSAttributedString.Key: Any] = [
+        .font: font,
+    ]
+    let attributedString = NSAttributedString(string: text, attributes: attributes)
+    let line = CTLineCreateWithAttributedString(attributedString)
+
+    var ascent: CGFloat = 0
+    var descent: CGFloat = 0
+    var leading: CGFloat = 0
+    let lineWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
+    let lineHeight = ascent + descent
+    let glyphBounds = CTLineGetBoundsWithOptions(line, [.useGlyphPathBounds, .excludeTypographicLeading]).standardized.integral
+
+    let lineCenterX = lineWidth * 0.5
+    let lineCenterY = (ascent - descent) * 0.5
+    let glyphCenterX = glyphBounds.midX
+    let glyphCenterY = glyphBounds.midY
+
+    return (
+        glyphBounds,
+        CGSize(width: lineWidth, height: lineHeight),
+        CGSize(
+            width: glyphCenterX - lineCenterX,
+            height: -(glyphCenterY - lineCenterY)
+        )
+    )
+}
+
 #Preview {
     let queue = NoteQueue()
     queue.enqueue(PianoNote(midiNumber: 60, frequency: 261.63, centsOffset: 0))
