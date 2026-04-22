@@ -8,29 +8,45 @@ import SwiftUI
 // MARK: - NoteQueue
 
 /// Public interface for injecting notes into StaffNoteView.
-/// Call `enqueue(_:)` to add a note; StaffNoteView observes this object.
+/// Call `enqueue(_:)` to add a note or `enqueueChord(_:)` for simultaneous notes.
 @MainActor
 final class NoteQueue: ObservableObject {
-    struct QueuedNote: Identifiable {
+    struct QueuedEvent: Identifiable {
         let id = UUID()
-        let note: PianoNote
+        let notes: [PianoNote]
     }
 
-    @Published private(set) var notes: [QueuedNote] = []
+    @Published private(set) var events: [QueuedEvent] = []
 
     func enqueue(_ note: PianoNote) {
-        notes.append(QueuedNote(note: note))
+        events.append(QueuedEvent(notes: [note]))
+    }
+
+    func enqueueChord(_ notes: [PianoNote]) {
+        let uniqueNotes = Dictionary(grouping: notes, by: \.midiNumber)
+            .compactMap { $0.value.first }
+            .sorted { $0.midiNumber < $1.midiNumber }
+
+        guard !uniqueNotes.isEmpty else { return }
+        events.append(QueuedEvent(notes: uniqueNotes))
     }
 
     fileprivate func trim(keepingAtMost maxCount: Int) {
-        guard notes.count > maxCount else { return }
-        notes.removeFirst(notes.count - maxCount)
+        guard events.count > maxCount else { return }
+        events.removeFirst(events.count - maxCount)
     }
 }
 
 // Chromatic pitch class (0-11) to diatonic step within one octave.
 // Accidentals share the same diatonic position as their natural note.
 private let pitchClassStep: [Int] = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6]
+
+private struct StaffChordNote: Identifiable {
+    let id: Int
+    let note: PianoNote
+    let step: Int
+    let isDisplaced: Bool
+}
 
 private func diatonicStep(for midiNumber: Int) -> Int {
     let delta = midiNumber - 60
@@ -75,16 +91,49 @@ private struct StaffCanvas: View {
         return []
     }
 
-    private func noteGlyph(for step: Int) -> String {
-        let scalar: UInt32
-        if step >= 0 {
-            // Treble staff: middle line is step 6 (B4).
-            scalar = step >= 6 ? 0xE1D6 : 0xE1D5
-        } else {
-            // Bass staff: middle line is step -6 (D3).
-            scalar = step >= -6 ? 0xE1D6 : 0xE1D5
+    private func chordNotes(for notes: [PianoNote]) -> [StaffChordNote] {
+        let sorted = notes
+            .map { note in (note: note, step: diatonicStep(for: note.midiNumber)) }
+            .sorted { lhs, rhs in
+                if lhs.step == rhs.step {
+                    return lhs.note.midiNumber < rhs.note.midiNumber
+                }
+                return lhs.step < rhs.step
+            }
+
+        var displacedSteps = Set<Int>()
+        var cluster: [(note: PianoNote, step: Int)] = []
+
+        func markCluster(_ cluster: [(note: PianoNote, step: Int)]) {
+            guard cluster.count > 1 else { return }
+            for (index, item) in cluster.enumerated() where index.isMultiple(of: 2) == false {
+                displacedSteps.insert(item.step)
+            }
         }
-        return String(UnicodeScalar(scalar)!)
+
+        for item in sorted {
+            if let previous = cluster.last, item.step - previous.step <= 1 {
+                cluster.append(item)
+            } else {
+                markCluster(cluster)
+                cluster = [item]
+            }
+        }
+        markCluster(cluster)
+
+        return sorted.map { item in
+            StaffChordNote(
+                id: item.note.midiNumber,
+                note: item.note,
+                step: item.step,
+                isDisplaced: displacedSteps.contains(item.step)
+            )
+        }
+    }
+
+    private func stemGoesUp(for notes: [StaffChordNote]) -> Bool {
+        let averageStep = notes.reduce(0) { $0 + $1.step } / max(notes.count, 1)
+        return averageStep < 2
     }
 
     var body: some View {
@@ -127,12 +176,15 @@ private struct StaffCanvas: View {
             let bassClefFont = UIFont(name: "Bravura", size: bassClefSize) ?? .systemFont(ofSize: bassClefSize)
             let bassClefWidth = glyphMetrics(for: smuflBassClef, font: bassClefFont).bounds.width
             let bassClefCenterX = clefLeftX + bassClefWidth / 2
-            let noteGlyphSize = lineGap * 3.2
+            let noteHeadWidth = lineGap * 1.08
+            let noteHeadHeight = lineGap * 0.74
+            let stemHeight = lineGap * 3.4
+            let stemWidth: CGFloat = 1.5
             
             let noteStartX = max(clefLeftX + trebleClefWidth, clefLeftX + bassClefWidth) + 10
             let noteEndX = width - margin
             let noteSpacing = lineGap * 2
-            let noteCount = queue.notes.count
+            let eventCount = queue.events.count
             let maxVisible = max(Int((noteEndX - noteStartX) / noteSpacing) + 2, 1)
             // Anchor the newest note one half-spacing from the right edge so it is
             // fully visible as soon as it enters, rather than being half-clipped.
@@ -187,44 +239,63 @@ private struct StaffCanvas: View {
                         y: yFor(step: -4, top: topPad, stepSize: stepSize) - lineGap * 0
                     )
 
-                ForEach(Array(queue.notes.enumerated()), id: \.element.id) { (index, entry) in
-                    let noteX = newestNoteX - CGFloat(noteCount - 1 - index) * noteSpacing
-                    let step = diatonicStep(for: entry.note.midiNumber)
-                    let noteY = yFor(step: step, top: topPad, stepSize: stepSize)
-                    let glyph = noteGlyph(for: step)
-                    let ledgers = ledgerSteps(for: step)
-
-                    let noteHeadHalfWidth = max(noteGlyphSize * 0.25, 1)
-                    let ledgerHalfWidth: CGFloat = ledgers.isEmpty ? noteHeadHalfWidth : max(noteHeadHalfWidth, 18)
-                    let accidentalOffsetX: CGFloat = entry.note.isBlackKey ? lineGap * 1.1 : 0
-                    let accidentalHalfWidth: CGFloat = entry.note.isBlackKey ? lineGap * 0.35 : 0
-
-                    let leftEdge = noteX - ledgerHalfWidth - accidentalOffsetX - accidentalHalfWidth
+                ForEach(Array(queue.events.enumerated()), id: \.element.id) { (index, event) in
+                    let noteX = newestNoteX - CGFloat(eventCount - 1 - index) * noteSpacing
+                    let chord = chordNotes(for: event.notes)
+                    let stemUp = stemGoesUp(for: chord)
+                    let ledgerLineSteps = Array(Set(chord.flatMap { ledgerSteps(for: $0.step) })).sorted()
+                    let hasDisplacedNote = chord.contains { $0.isDisplaced }
+                    let blackKeyNotes = chord.filter { $0.note.isBlackKey }
+                    let ledgerWidth = noteHeadWidth * (hasDisplacedNote ? 3.0 : 2.15)
+                    let accidentalWidth = blackKeyNotes.isEmpty ? 0 : lineGap * (1.2 + CGFloat(blackKeyNotes.count - 1) * 0.32)
+                    let leftEdge = noteX - ledgerWidth / 2 - accidentalWidth - lineGap * 0.35
 
                     if leftEdge >= noteStartX {
-                        ForEach(ledgers, id: \.self) { ledgerStep in
+                        ForEach(ledgerLineSteps, id: \.self) { ledgerStep in
                             Rectangle()
                                 .fill(Color.black.opacity(0.60))
-                                .frame(width: 36, height: 1.4)
+                                .frame(width: ledgerWidth, height: 1.4)
                                 .position(x: noteX, y: yFor(step: ledgerStep, top: topPad, stepSize: stepSize))
                         }
 
-                        Text(glyph)
-                            .font(.custom("Bravura", size: noteGlyphSize))
-                            .foregroundStyle(Color(red: 0.13, green: 0.18, blue: 0.27))
-                            .position(x: noteX, y: noteY)
+                        if let lowest = chord.first, let highest = chord.last {
+                            let stemAnchorStep = stemUp ? lowest.step : highest.step
+                            let stemStartY = yFor(step: stemAnchorStep, top: topPad, stepSize: stepSize)
+                            let stemEndY = stemStartY + (stemUp ? -stemHeight : stemHeight)
+                            let stemX = noteX + (stemUp ? noteHeadWidth * 0.45 : -noteHeadWidth * 0.45)
 
-                        if entry.note.isBlackKey {
+                            Rectangle()
+                                .fill(Color(red: 0.13, green: 0.18, blue: 0.27))
+                                .frame(width: stemWidth, height: abs(stemEndY - stemStartY))
+                                .position(x: stemX, y: (stemStartY + stemEndY) / 2)
+                        }
+
+                        ForEach(chord) { chordNote in
+                            let offsetDirection: CGFloat = stemUp ? 1 : -1
+                            let displacedX = chordNote.isDisplaced ? noteHeadWidth * 0.82 * offsetDirection : 0
+                            let noteY = yFor(step: chordNote.step, top: topPad, stepSize: stepSize)
+
+                            Ellipse()
+                                .fill(Color(red: 0.13, green: 0.18, blue: 0.27))
+                                .frame(width: noteHeadWidth, height: noteHeadHeight)
+                                .rotationEffect(.degrees(-20))
+                                .position(x: noteX + displacedX, y: noteY)
+                        }
+
+                        ForEach(Array(blackKeyNotes.enumerated()), id: \.element.id) { accidentalIndex, chordNote in
                             Text("♯")
                                 .font(.system(size: lineGap * 1.2, weight: .semibold, design: .serif))
                                 .foregroundStyle(Color(red: 0.13, green: 0.18, blue: 0.27))
-                                .position(x: noteX - accidentalOffsetX, y: noteY - 2)
+                                .position(
+                                    x: noteX - lineGap * (1.15 + CGFloat(accidentalIndex) * 0.34),
+                                    y: yFor(step: chordNote.step, top: topPad, stepSize: stepSize) - 2
+                                )
                         }
                     }
                 }
             }
-            .animation(.easeInOut(duration: 0.3), value: noteCount)
-            .onChange(of: noteCount) { _, newCount in
+            .animation(.easeInOut(duration: 0.3), value: eventCount)
+            .onChange(of: eventCount) { _, newCount in
                 if newCount > maxVisible {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                         queue.trim(keepingAtMost: maxVisible)
@@ -278,9 +349,16 @@ private func glyphMetrics(for text: String, font: UIFont) -> (bounds: CGRect, li
 
 #Preview {
     let queue = NoteQueue()
-    queue.enqueue(PianoNote(midiNumber: 60, frequency: 261.63, centsOffset: 0))
-    queue.enqueue(PianoNote(midiNumber: 64, frequency: 329.63, centsOffset: 0))
-    queue.enqueue(PianoNote(midiNumber: 67, frequency: 392.00, centsOffset: 0))
+    queue.enqueueChord([
+        PianoNote(midiNumber: 60, frequency: 261.63, centsOffset: 0),
+        PianoNote(midiNumber: 64, frequency: 329.63, centsOffset: 0),
+        PianoNote(midiNumber: 67, frequency: 392.00, centsOffset: 0),
+    ])
+    queue.enqueueChord([
+        PianoNote(midiNumber: 61, frequency: 277.18, centsOffset: 0),
+        PianoNote(midiNumber: 62, frequency: 293.66, centsOffset: 0),
+        PianoNote(midiNumber: 65, frequency: 349.23, centsOffset: 0),
+    ])
     return StaffNoteView(queue: queue)
         .frame(height: 320)
         .padding()

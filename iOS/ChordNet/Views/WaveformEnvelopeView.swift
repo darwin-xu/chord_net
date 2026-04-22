@@ -26,12 +26,6 @@ struct WaveformEnvelopeView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(headline)
-                .font(.system(size: 30, weight: .heavy, design: .rounded))
-                .foregroundStyle(isListening ? .white : Color.white.opacity(0.78))
-                .lineLimit(1)
-                .minimumScaleFactor(0.55)
-
             GeometryReader { geometry in
                 if isFlatEnvelope {
                     flatLine(in: geometry.size)
@@ -46,7 +40,7 @@ struct WaveformEnvelopeView: View {
                     }
                 }
             }
-            .frame(height: 92)
+            .frame(maxHeight: .infinity)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 18)

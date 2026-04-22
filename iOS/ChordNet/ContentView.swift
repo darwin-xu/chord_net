@@ -41,9 +41,7 @@ struct ContentView: View {
             .ignoresSafeArea()
         )
         .onChange(of: engine.detectedNotes) { _, newNotes in
-            for note in newNotes.compactMap(PianoNote.init(chordNetName:)) {
-                staffNoteQueue.enqueue(note)
-            }
+            staffNoteQueue.enqueueChord(newNotes.compactMap(PianoNote.init(chordNetName:)))
         }
     }
 
