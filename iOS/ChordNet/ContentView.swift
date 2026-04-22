@@ -1,8 +1,14 @@
 import SwiftUI
+#if STAFF_INPUT_MODE
+import UIKit
+#endif
 
 struct ContentView: View {
     @StateObject private var engine = AudioEngine()
     @StateObject private var staffNoteQueue = NoteQueue()
+#if STAFF_INPUT_MODE
+    @State private var staffInput = StaffKeyboardInputState()
+#endif
 
     private let waveformStyle: WaveformEnvelopeView.Style = .neonThreads
     private let staffHeightRatio: CGFloat = 0.35
@@ -25,6 +31,10 @@ struct ContentView: View {
                 PianoKeyboardView(activeMIDINotes: activeMIDINotes)
                     .frame(height: geometry.size.height * 0.24)
 
+#if STAFF_INPUT_MODE
+                staffInputPanel
+#endif
+
                 controlsPanel
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
@@ -43,6 +53,13 @@ struct ContentView: View {
         .onChange(of: engine.detectedNotes) { _, newNotes in
             staffNoteQueue.enqueueChord(newNotes.compactMap(PianoNote.init(chordNetName:)))
         }
+#if STAFF_INPUT_MODE
+        .background(
+            StaffKeyboardInputCapture { key in
+                handleStaffInput(key)
+            }
+        )
+#endif
     }
 
     private var statusBar: some View {
@@ -131,7 +148,11 @@ struct ContentView: View {
     }
 
     private var activeMIDINotes: Set<Int> {
-        Set(engine.detectedNotes.compactMap { PianoNote(chordNetName: $0)?.midiNumber })
+        var notes = Set(engine.detectedNotes.compactMap { PianoNote(chordNetName: $0)?.midiNumber })
+#if STAFF_INPUT_MODE
+        notes.formUnion(staffInput.pendingNotes.map(\.midiNumber))
+#endif
+        return notes
     }
 
     private var waveformEnvelope: [CGFloat] {
@@ -158,6 +179,79 @@ struct ContentView: View {
         }
         return engine.statusMessage
     }
+
+#if STAFF_INPUT_MODE
+    private var staffInputPanel: some View {
+        HStack(spacing: 12) {
+            Text("Staff Input")
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color(red: 0.24, green: 0.42, blue: 0.67))
+
+            Text(staffInput.displayText)
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(Color(red: 0.13, green: 0.18, blue: 0.27))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+
+            Spacer(minLength: 8)
+
+            ForEach([3, 4, 5, 6], id: \.self) { octave in
+                Button {
+                    staffInput.selectOctave(octave)
+                } label: {
+                    Text("\(octave)")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .frame(width: 18)
+                }
+                .buttonStyle(.bordered)
+                .tint(staffInput.selectedOctave == octave ? Color(red: 0.24, green: 0.42, blue: 0.67) : Color.secondary)
+                .accessibilityLabel("Select octave \(octave)")
+            }
+
+            Button {
+                commitStaffInput()
+            } label: {
+                Image(systemName: "music.note.list")
+                    .font(.system(size: 16, weight: .semibold))
+            }
+            .buttonStyle(.bordered)
+            .disabled(staffInput.pendingNotes.isEmpty)
+            .accessibilityLabel("Draw keyboard chord")
+
+            Button {
+                staffInput.clear()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 16, weight: .semibold))
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel("Clear keyboard chord")
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 44)
+        .background(Color.white.opacity(0.86))
+    }
+
+    private func handleStaffInput(_ key: StaffInputKey) {
+        switch key {
+        case .note(let letter):
+            staffInput.append(letter)
+        case .octave(let octave):
+            staffInput.selectOctave(octave)
+        case .commit:
+            commitStaffInput()
+        case .delete:
+            staffInput.removeLast()
+        case .clear:
+            staffInput.clear()
+        }
+    }
+
+    private func commitStaffInput() {
+        staffNoteQueue.enqueueChord(staffInput.pendingNotes)
+        staffInput.clear()
+    }
+#endif
 }
 
 private extension PianoNote {
@@ -211,3 +305,140 @@ private extension PianoNote {
 #Preview {
     ContentView()
 }
+
+#if STAFF_INPUT_MODE
+private enum StaffInputKey {
+    case note(Character)
+    case octave(Int)
+    case commit
+    case delete
+    case clear
+}
+
+private struct StaffKeyboardInputState {
+    private(set) var pendingNotes: [PianoNote] = []
+    private(set) var selectedOctave = 4
+
+    var displayText: String {
+        let notes = pendingNotes.map(\.displayName).joined(separator: " ")
+        let guide = "Oct \(selectedOctave) | c d e f g a b | C D F G A = sharp | Space draws"
+        return notes.isEmpty ? guide : "\(guide) | \(notes)"
+    }
+
+    mutating func append(_ letter: Character) {
+        guard let midiNumber = Self.midiNumber(for: letter, octave: selectedOctave) else { return }
+        let frequency = 440.0 * pow(2.0, Double(midiNumber - 69) / 12.0)
+        let note = PianoNote(midiNumber: midiNumber, frequency: frequency, centsOffset: 0)
+
+        if !pendingNotes.contains(where: { $0.midiNumber == note.midiNumber }) {
+            pendingNotes.append(note)
+        }
+    }
+
+    mutating func selectOctave(_ octave: Int) {
+        selectedOctave = octave
+    }
+
+    mutating func removeLast() {
+        guard !pendingNotes.isEmpty else { return }
+        pendingNotes.removeLast()
+    }
+
+    mutating func clear() {
+        pendingNotes.removeAll()
+    }
+
+    private static func midiNumber(for letter: Character, octave: Int) -> Int? {
+        let semitone: Int
+        switch String(letter) {
+        case "c": semitone = 0
+        case "C": semitone = 1
+        case "d": semitone = 2
+        case "D": semitone = 3
+        case "e": semitone = 4
+        case "f": semitone = 5
+        case "F": semitone = 6
+        case "g": semitone = 7
+        case "G": semitone = 8
+        case "a": semitone = 9
+        case "A": semitone = 10
+        case "b": semitone = 11
+        default: return nil
+        }
+
+        return (octave + 1) * 12 + semitone
+    }
+}
+
+private struct StaffKeyboardInputCapture: UIViewRepresentable {
+    let onInput: (StaffInputKey) -> Void
+
+    func makeUIView(context: Context) -> KeyboardInputView {
+        let view = KeyboardInputView()
+        view.onInput = onInput
+        return view
+    }
+
+    func updateUIView(_ uiView: KeyboardInputView, context: Context) {
+        uiView.onInput = onInput
+        DispatchQueue.main.async {
+            uiView.window?.makeKey()
+            uiView.becomeFirstResponder()
+        }
+    }
+
+    final class KeyboardInputView: UIView {
+        var onInput: ((StaffInputKey) -> Void)?
+
+        override var canBecomeFirstResponder: Bool { true }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            becomeFirstResponder()
+        }
+
+        override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+            var handled = false
+            for press in presses {
+                guard let characters = press.key?.characters else { continue }
+                for character in characters {
+                    if let key = inputKey(for: character, keyCode: press.key?.keyCode) {
+                        onInput?(key)
+                        handled = true
+                    }
+                }
+            }
+
+            if !handled {
+                super.pressesBegan(presses, with: event)
+            }
+        }
+
+        private func inputKey(for character: Character, keyCode: UIKeyboardHIDUsage?) -> StaffInputKey? {
+            switch character {
+            case "c", "C", "d", "D", "e", "f", "F", "g", "G", "a", "A", "b":
+                return .note(character)
+            case "3", "4", "5", "6":
+                return .octave(Int(String(character)) ?? 4)
+            case " ", "\r", "\n":
+                return .commit
+            case "\u{8}", "\u{7f}":
+                return .delete
+            case "\u{1b}":
+                return .clear
+            default:
+                if keyCode == .keyboardDeleteOrBackspace {
+                    return .delete
+                }
+                if keyCode == .keyboardReturnOrEnter || keyCode == .keypadEnter {
+                    return .commit
+                }
+                if keyCode == .keyboardEscape {
+                    return .clear
+                }
+                return nil
+            }
+        }
+    }
+}
+#endif
