@@ -325,7 +325,7 @@ private struct StaffCanvas: View {
             let sharpMetrics = glyphMetrics(for: "♯", font: sharpFont)
             let sharpWidth = max(sharpMetrics.bounds.width, sharpMetrics.lineSize.width)
             let sharpSpacing = max(1, sharpWidth * 0.08)
-            let sharpNoteGap = max(0, lineGap * 0.35 - 2)
+            let sharpNoteGap = max(0, lineGap * 0.1)
             
             let noteStartX = max(clefLeftX + trebleClefWidth, clefLeftX + bassClefWidth) + 10
             let noteEndX = width - margin
@@ -404,14 +404,8 @@ private struct StaffCanvas: View {
                         let chord = chordNotes(for: event.notes)
                         let stemUp = stemGoesUp(for: chord)
                         let ledgerLineSteps = Array(Set(chord.flatMap { ledgerSteps(for: $0.step) })).sorted()
-                        let hasDisplacedNote = chord.contains { $0.isDisplaced }
                         let blackKeyNotes = chord.filter { $0.note.isBlackKey }
-                        let ledgerWidth = noteHeadWidth * (hasDisplacedNote ? 3.0 : 2.15)
-                        let accidentalSpan = accidentalWidth(
-                            for: blackKeyNotes.count,
-                            symbolWidth: sharpWidth,
-                            symbolSpacing: sharpSpacing
-                        )
+                        let ledgerWidth = noteHeadWidth * 2.15
                         let leftEdge = noteX - layoutMetrics.leftExtent
                         let rightEdge = noteX + layoutMetrics.rightExtent
 
@@ -453,7 +447,7 @@ private struct StaffCanvas: View {
                                     .foregroundStyle(Color(red: 0.13, green: 0.18, blue: 0.27))
                                     .position(
                                         x: noteX - noteHeadWidth / 2 - sharpNoteGap - sharpWidth / 2 - CGFloat(accidentalIndex) * (sharpWidth + sharpSpacing),
-                                        y: yFor(step: chordNote.step, top: topPad, stepSize: stepSize) - 2
+                                        y: yFor(step: chordNote.step, top: topPad, stepSize: stepSize) + sharpMetrics.offset.height
                                     )
                             }
                         }
