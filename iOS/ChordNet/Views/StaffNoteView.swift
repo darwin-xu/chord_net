@@ -65,9 +65,12 @@ struct StaffNoteView: View {
 
 private struct StaffCanvas: View {
     @ObservedObject var queue: NoteQueue
+    @State private var renderedEvents: [NoteQueue.QueuedEvent] = []
+    @State private var slideOffset: CGFloat = 0
 
     private let trebleLineSteps = [2, 4, 6, 8, 10]
     private let bassLineSteps = [-10, -8, -6, -4, -2]
+    private let slideDuration = 0.3
 
     private func yFor(step: Int, top: CGFloat, stepSize: CGFloat) -> CGFloat {
         top + CGFloat(12 - step) * stepSize
@@ -132,8 +135,50 @@ private struct StaffCanvas: View {
     }
 
     private func stemGoesUp(for notes: [StaffChordNote]) -> Bool {
-        let averageStep = notes.reduce(0) { $0 + $1.step } / max(notes.count, 1)
-        return averageStep < 2
+        guard !notes.isEmpty else { return true }
+
+        let averageStep = notes.reduce(0) { $0 + $1.step } / notes.count
+        let staffMiddleLineStep = averageStep >= 0 ? 6 : -6
+        return averageStep < staffMiddleLineStep
+    }
+
+    private func horizontalSpacing(for event: NoteQueue.QueuedEvent, baseSpacing: CGFloat, lineGap: CGFloat) -> CGFloat {
+        let accidentalCount = event.notes.filter(\.isBlackKey).count
+        guard accidentalCount > 0 else { return baseSpacing }
+        return baseSpacing + lineGap * (0.9 + CGFloat(accidentalCount - 1) * 0.35)
+    }
+
+    private func maxVisibleEventCount(
+        for events: [NoteQueue.QueuedEvent],
+        availableWidth: CGFloat,
+        baseSpacing: CGFloat,
+        lineGap: CGFloat
+    ) -> Int {
+        var usedWidth: CGFloat = 0
+        var count = 0
+
+        for event in events.reversed() {
+            let spacing = horizontalSpacing(for: event, baseSpacing: baseSpacing, lineGap: lineGap)
+            guard usedWidth + spacing <= availableWidth || count == 0 else { break }
+            usedWidth += spacing
+            count += 1
+        }
+
+        return max(count + 1, 1)
+    }
+
+    private func incomingSpacing(
+        from oldEvents: [NoteQueue.QueuedEvent],
+        to newEvents: [NoteQueue.QueuedEvent],
+        baseSpacing: CGFloat,
+        lineGap: CGFloat
+    ) -> CGFloat {
+        let oldIDs = Set(oldEvents.map(\.id))
+        let incomingEvents = newEvents.filter { oldIDs.contains($0.id) == false }
+
+        return incomingEvents.reduce(CGFloat(0)) { partialResult, event in
+            partialResult + horizontalSpacing(for: event, baseSpacing: baseSpacing, lineGap: lineGap)
+        }
     }
 
     var body: some View {
@@ -183,13 +228,12 @@ private struct StaffCanvas: View {
             
             let noteStartX = max(clefLeftX + trebleClefWidth, clefLeftX + bassClefWidth) + 10
             let noteEndX = width - margin
-            let noteSpacing = lineGap * 2
-            let eventCount = queue.events.count
-            let maxVisible = max(Int((noteEndX - noteStartX) / noteSpacing) + 2, 1)
-            // Anchor the newest note one half-spacing from the right edge so it is
-            // fully visible as soon as it enters, rather than being half-clipped.
-            let newestNoteX = noteEndX - noteSpacing * 0.5
-
+            let baseNoteSpacing = lineGap * 2
+            let events = renderedEvents.isEmpty ? queue.events : renderedEvents
+            let eventIDs = queue.events.map(\.id)
+            let eventSpacings = events.map {
+                horizontalSpacing(for: $0, baseSpacing: baseNoteSpacing, lineGap: lineGap)
+            }
             let staffStartX = barLineX
             ZStack {
                 Color.white
@@ -239,66 +283,113 @@ private struct StaffCanvas: View {
                         y: yFor(step: -4, top: topPad, stepSize: stepSize) - lineGap * 0
                     )
 
-                ForEach(Array(queue.events.enumerated()), id: \.element.id) { (index, event) in
-                    let noteX = newestNoteX - CGFloat(eventCount - 1 - index) * noteSpacing
-                    let chord = chordNotes(for: event.notes)
-                    let stemUp = stemGoesUp(for: chord)
-                    let ledgerLineSteps = Array(Set(chord.flatMap { ledgerSteps(for: $0.step) })).sorted()
-                    let hasDisplacedNote = chord.contains { $0.isDisplaced }
-                    let blackKeyNotes = chord.filter { $0.note.isBlackKey }
-                    let ledgerWidth = noteHeadWidth * (hasDisplacedNote ? 3.0 : 2.15)
-                    let accidentalWidth = blackKeyNotes.isEmpty ? 0 : lineGap * (1.2 + CGFloat(blackKeyNotes.count - 1) * 0.32)
-                    let leftEdge = noteX - ledgerWidth / 2 - accidentalWidth - lineGap * 0.35
+                ZStack {
+                    ForEach(Array(events.enumerated()), id: \.element.id) { (index, event) in
+                        let newerEventSpacing = eventSpacings.dropFirst(index + 1).reduce(CGFloat(0), +)
+                        let ownSpacing = eventSpacings.indices.contains(index) ? eventSpacings[index] : baseNoteSpacing
+                        let noteX = noteEndX + slideOffset - newerEventSpacing - ownSpacing * 0.5
+                        let chord = chordNotes(for: event.notes)
+                        let stemUp = stemGoesUp(for: chord)
+                        let ledgerLineSteps = Array(Set(chord.flatMap { ledgerSteps(for: $0.step) })).sorted()
+                        let hasDisplacedNote = chord.contains { $0.isDisplaced }
+                        let blackKeyNotes = chord.filter { $0.note.isBlackKey }
+                        let ledgerWidth = noteHeadWidth * (hasDisplacedNote ? 3.0 : 2.15)
+                        let accidentalWidth = blackKeyNotes.isEmpty ? 0 : lineGap * (1.2 + CGFloat(blackKeyNotes.count - 1) * 0.32)
+                        let leftEdge = noteX - ledgerWidth / 2 - accidentalWidth - lineGap * 0.35
+                        let rightEdge = noteX + ledgerWidth / 2 + lineGap * 0.45
 
-                    if leftEdge >= noteStartX {
-                        ForEach(ledgerLineSteps, id: \.self) { ledgerStep in
-                            Rectangle()
-                                .fill(Color.black.opacity(0.60))
-                                .frame(width: ledgerWidth, height: 1.4)
-                                .position(x: noteX, y: yFor(step: ledgerStep, top: topPad, stepSize: stepSize))
-                        }
+                        if rightEdge >= noteStartX && leftEdge <= noteEndX {
+                            ForEach(ledgerLineSteps, id: \.self) { ledgerStep in
+                                Rectangle()
+                                    .fill(Color.black.opacity(0.60))
+                                    .frame(width: ledgerWidth, height: 1.4)
+                                    .position(x: noteX, y: yFor(step: ledgerStep, top: topPad, stepSize: stepSize))
+                            }
 
-                        if let lowest = chord.first, let highest = chord.last {
-                            let stemAnchorStep = stemUp ? lowest.step : highest.step
-                            let stemStartY = yFor(step: stemAnchorStep, top: topPad, stepSize: stepSize)
-                            let stemEndY = stemStartY + (stemUp ? -stemHeight : stemHeight)
-                            let stemX = noteX + (stemUp ? noteHeadWidth * 0.45 : -noteHeadWidth * 0.45)
+                            if let lowest = chord.first, let highest = chord.last {
+                                let stemAnchorStep = stemUp ? lowest.step : highest.step
+                                let stemStartY = yFor(step: stemAnchorStep, top: topPad, stepSize: stepSize)
+                                let stemEndY = stemStartY + (stemUp ? -stemHeight : stemHeight)
+                                let stemX = noteX + (stemUp ? noteHeadWidth * 0.45 : -noteHeadWidth * 0.45)
 
-                            Rectangle()
-                                .fill(Color(red: 0.13, green: 0.18, blue: 0.27))
-                                .frame(width: stemWidth, height: abs(stemEndY - stemStartY))
-                                .position(x: stemX, y: (stemStartY + stemEndY) / 2)
-                        }
+                                Rectangle()
+                                    .fill(Color(red: 0.13, green: 0.18, blue: 0.27))
+                                    .frame(width: stemWidth, height: abs(stemEndY - stemStartY))
+                                    .position(x: stemX, y: (stemStartY + stemEndY) / 2)
+                            }
 
-                        ForEach(chord) { chordNote in
-                            let offsetDirection: CGFloat = stemUp ? 1 : -1
-                            let displacedX = chordNote.isDisplaced ? noteHeadWidth * 0.82 * offsetDirection : 0
-                            let noteY = yFor(step: chordNote.step, top: topPad, stepSize: stepSize)
+                            ForEach(chord) { chordNote in
+                                let offsetDirection: CGFloat = stemUp ? 1 : -1
+                                let displacedX = chordNote.isDisplaced ? noteHeadWidth * 0.82 * offsetDirection : 0
+                                let noteY = yFor(step: chordNote.step, top: topPad, stepSize: stepSize)
 
-                            Ellipse()
-                                .fill(Color(red: 0.13, green: 0.18, blue: 0.27))
-                                .frame(width: noteHeadWidth, height: noteHeadHeight)
-                                .rotationEffect(.degrees(-20))
-                                .position(x: noteX + displacedX, y: noteY)
-                        }
+                                Ellipse()
+                                    .fill(Color(red: 0.13, green: 0.18, blue: 0.27))
+                                    .frame(width: noteHeadWidth, height: noteHeadHeight)
+                                    .rotationEffect(.degrees(-20))
+                                    .position(x: noteX + displacedX, y: noteY)
+                            }
 
-                        ForEach(Array(blackKeyNotes.enumerated()), id: \.element.id) { accidentalIndex, chordNote in
-                            Text("♯")
-                                .font(.system(size: lineGap * 1.2, weight: .semibold, design: .serif))
-                                .foregroundStyle(Color(red: 0.13, green: 0.18, blue: 0.27))
-                                .position(
-                                    x: noteX - lineGap * (1.15 + CGFloat(accidentalIndex) * 0.34),
-                                    y: yFor(step: chordNote.step, top: topPad, stepSize: stepSize) - 2
-                                )
+                            ForEach(Array(blackKeyNotes.enumerated()), id: \.element.id) { accidentalIndex, chordNote in
+                                Text("♯")
+                                    .font(.system(size: lineGap * 1.2, weight: .semibold, design: .serif))
+                                    .foregroundStyle(Color(red: 0.13, green: 0.18, blue: 0.27))
+                                    .position(
+                                        x: noteX - lineGap * (1.15 + CGFloat(accidentalIndex) * 0.34),
+                                        y: yFor(step: chordNote.step, top: topPad, stepSize: stepSize) - 2
+                                    )
+                            }
                         }
                     }
                 }
+                .mask {
+                    Rectangle()
+                        .frame(width: max(noteEndX - noteStartX, 0), height: height)
+                        .position(x: noteStartX + max(noteEndX - noteStartX, 0) / 2, y: height / 2)
+                }
             }
-            .animation(.easeInOut(duration: 0.3), value: eventCount)
-            .onChange(of: eventCount) { _, newCount in
-                if newCount > maxVisible {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                        queue.trim(keepingAtMost: maxVisible)
+            .onAppear {
+                if renderedEvents.isEmpty {
+                    renderedEvents = queue.events
+                }
+            }
+            .onChange(of: eventIDs) { _, _ in
+                let incomingWidth = incomingSpacing(
+                    from: renderedEvents,
+                    to: queue.events,
+                    baseSpacing: baseNoteSpacing,
+                    lineGap: lineGap
+                )
+
+                if incomingWidth > 0 {
+                    var transaction = Transaction(animation: nil)
+                    transaction.disablesAnimations = true
+
+                    withTransaction(transaction) {
+                        renderedEvents = queue.events
+                        slideOffset = incomingWidth
+                    }
+
+                    DispatchQueue.main.async {
+                        withAnimation(.easeInOut(duration: slideDuration)) {
+                            slideOffset = 0
+                        }
+                    }
+                } else {
+                    renderedEvents = queue.events
+                    slideOffset = 0
+                }
+
+                let queueMaxVisible = maxVisibleEventCount(
+                    for: queue.events,
+                    availableWidth: noteEndX - noteStartX,
+                    baseSpacing: baseNoteSpacing,
+                    lineGap: lineGap
+                )
+
+                if queue.events.count > queueMaxVisible {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + slideDuration + 0.05) {
+                        queue.trim(keepingAtMost: queueMaxVisible)
                     }
                 }
             }
