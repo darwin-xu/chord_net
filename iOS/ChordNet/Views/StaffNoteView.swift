@@ -286,8 +286,7 @@ private struct StaffCanvas: View {
                 ZStack {
                     ForEach(Array(events.enumerated()), id: \.element.id) { (index, event) in
                         let newerEventSpacing = eventSpacings.dropFirst(index + 1).reduce(CGFloat(0), +)
-                        let ownSpacing = eventSpacings.indices.contains(index) ? eventSpacings[index] : baseNoteSpacing
-                        let noteX = noteEndX + slideOffset - newerEventSpacing - ownSpacing * 0.5
+                        let noteX = noteEndX + slideOffset - newerEventSpacing - baseNoteSpacing * 0.5
                         let chord = chordNotes(for: event.notes)
                         let stemUp = stemGoesUp(for: chord)
                         let ledgerLineSteps = Array(Set(chord.flatMap { ledgerSteps(for: $0.step) })).sorted()
