@@ -323,9 +323,9 @@ private struct StaffCanvas: View {
             let sharpDescriptor = sharpBaseFont.fontDescriptor.withDesign(.serif) ?? sharpBaseFont.fontDescriptor
             let sharpFont = UIFont(descriptor: sharpDescriptor, size: lineGap * 1.2)
             let sharpMetrics = glyphMetrics(for: "♯", font: sharpFont)
-            let sharpWidth = max(sharpMetrics.bounds.width, sharpMetrics.lineSize.width)
-            let sharpSpacing = max(1, sharpWidth * 0.08)
-            let sharpNoteGap = max(0, lineGap * 0.1)
+            let sharpWidth = max(sharpMetrics.bounds.width, 1)
+            let sharpSpacing = max(0.5, sharpWidth * 0.03)
+            let sharpNoteGap = max(0, lineGap * 0.02)
             
             let noteStartX = max(clefLeftX + trebleClefWidth, clefLeftX + bassClefWidth) + 10
             let noteEndX = width - margin
@@ -446,7 +446,7 @@ private struct StaffCanvas: View {
                                     .font(.system(size: lineGap * 1.2, weight: .semibold, design: .serif))
                                     .foregroundStyle(Color(red: 0.13, green: 0.18, blue: 0.27))
                                     .position(
-                                        x: noteX - noteHeadWidth / 2 - sharpNoteGap - sharpWidth / 2 - CGFloat(accidentalIndex) * (sharpWidth + sharpSpacing),
+                                        x: noteX - noteHeadWidth / 2 - sharpNoteGap - sharpWidth / 2 - sharpMetrics.offset.width - CGFloat(accidentalIndex) * (sharpWidth + sharpSpacing),
                                         y: yFor(step: chordNote.step, top: topPad, stepSize: stepSize) + sharpMetrics.offset.height
                                     )
                             }
