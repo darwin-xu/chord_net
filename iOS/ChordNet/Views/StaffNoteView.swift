@@ -48,6 +48,12 @@ private struct StaffChordNote: Identifiable {
     let isDisplaced: Bool
 }
 
+private struct EventLayoutMetrics {
+    let leftExtent: CGFloat
+    let rightExtent: CGFloat
+    let totalWidth: CGFloat
+}
+
 private func diatonicStep(for midiNumber: Int) -> Int {
     let delta = midiNumber - 60
     let octaves = delta >= 0 ? delta / 12 : (delta - 11) / 12
@@ -142,23 +148,98 @@ private struct StaffCanvas: View {
         return averageStep < staffMiddleLineStep
     }
 
-    private func horizontalSpacing(for event: NoteQueue.QueuedEvent, baseSpacing: CGFloat, lineGap: CGFloat) -> CGFloat {
+    private func accidentalWidth(
+        for accidentalCount: Int,
+        symbolWidth: CGFloat,
+        symbolSpacing: CGFloat
+    ) -> CGFloat {
+        guard accidentalCount > 0 else { return 0 }
+        return CGFloat(accidentalCount) * symbolWidth + CGFloat(accidentalCount - 1) * symbolSpacing
+    }
+
+    private func accidentalReservedWidth(
+        for event: NoteQueue.QueuedEvent,
+        symbolWidth: CGFloat,
+        symbolSpacing: CGFloat,
+        noteGap: CGFloat
+    ) -> CGFloat {
         let accidentalCount = event.notes.filter(\.isBlackKey).count
-        guard accidentalCount > 0 else { return baseSpacing }
-        return baseSpacing + lineGap * (0.9 + CGFloat(accidentalCount - 1) * 0.35)
+        guard accidentalCount > 0 else { return 0 }
+        return accidentalWidth(for: accidentalCount, symbolWidth: symbolWidth, symbolSpacing: symbolSpacing) + noteGap
+    }
+
+    private func horizontalSpacing(
+        for metrics: EventLayoutMetrics,
+        baseSpacing: CGFloat
+    ) -> CGFloat {
+        max(baseSpacing, metrics.totalWidth)
+    }
+
+    private func eventLayoutMetrics(
+        for event: NoteQueue.QueuedEvent,
+        baseSpacing: CGFloat,
+        noteHeadWidth: CGFloat,
+        lineGap: CGFloat,
+        accidentalSymbolWidth: CGFloat,
+        accidentalSymbolSpacing: CGFloat,
+        accidentalNoteGap: CGFloat
+    ) -> EventLayoutMetrics {
+        let chord = chordNotes(for: event.notes)
+        let stemUp = stemGoesUp(for: chord)
+        let hasDisplacedNote = chord.contains { $0.isDisplaced }
+        let accidentalCount = chord.filter { $0.note.isBlackKey }.count
+        let accidentalSpan = accidentalWidth(
+            for: accidentalCount,
+            symbolWidth: accidentalSymbolWidth,
+            symbolSpacing: accidentalSymbolSpacing
+        )
+        let accidentalReservedWidth = accidentalCount == 0 ? 0 : accidentalSpan + accidentalNoteGap
+        let ledgerWidth = noteHeadWidth * (hasDisplacedNote ? 3.0 : 2.15)
+        let offsetDirection: CGFloat = stemUp ? 1 : -1
+
+        var minDrawingX = -ledgerWidth / 2
+        var maxDrawingX = ledgerWidth / 2
+
+        for chordNote in chord {
+            let displacedX = chordNote.isDisplaced ? noteHeadWidth * 0.82 * offsetDirection : 0
+            minDrawingX = min(minDrawingX, displacedX - noteHeadWidth / 2)
+            maxDrawingX = max(maxDrawingX, displacedX + noteHeadWidth / 2)
+        }
+
+        let leftExtent = -minDrawingX + accidentalReservedWidth
+        let rightExtent = maxDrawingX + lineGap * 0.45
+
+        return EventLayoutMetrics(
+            leftExtent: leftExtent,
+            rightExtent: rightExtent,
+            totalWidth: leftExtent + rightExtent
+        )
     }
 
     private func maxVisibleEventCount(
         for events: [NoteQueue.QueuedEvent],
         availableWidth: CGFloat,
         baseSpacing: CGFloat,
-        lineGap: CGFloat
+        noteHeadWidth: CGFloat,
+        lineGap: CGFloat,
+        accidentalSymbolWidth: CGFloat,
+        accidentalSymbolSpacing: CGFloat,
+        accidentalNoteGap: CGFloat
     ) -> Int {
         var usedWidth: CGFloat = 0
         var count = 0
 
         for event in events.reversed() {
-            let spacing = horizontalSpacing(for: event, baseSpacing: baseSpacing, lineGap: lineGap)
+            let metrics = eventLayoutMetrics(
+                for: event,
+                baseSpacing: baseSpacing,
+                noteHeadWidth: noteHeadWidth,
+                lineGap: lineGap,
+                accidentalSymbolWidth: accidentalSymbolWidth,
+                accidentalSymbolSpacing: accidentalSymbolSpacing,
+                accidentalNoteGap: accidentalNoteGap
+            )
+            let spacing = horizontalSpacing(for: metrics, baseSpacing: baseSpacing)
             guard usedWidth + spacing <= availableWidth || count == 0 else { break }
             usedWidth += spacing
             count += 1
@@ -171,13 +252,26 @@ private struct StaffCanvas: View {
         from oldEvents: [NoteQueue.QueuedEvent],
         to newEvents: [NoteQueue.QueuedEvent],
         baseSpacing: CGFloat,
-        lineGap: CGFloat
+        noteHeadWidth: CGFloat,
+        lineGap: CGFloat,
+        accidentalSymbolWidth: CGFloat,
+        accidentalSymbolSpacing: CGFloat,
+        accidentalNoteGap: CGFloat
     ) -> CGFloat {
         let oldIDs = Set(oldEvents.map(\.id))
         let incomingEvents = newEvents.filter { oldIDs.contains($0.id) == false }
 
         return incomingEvents.reduce(CGFloat(0)) { partialResult, event in
-            partialResult + horizontalSpacing(for: event, baseSpacing: baseSpacing, lineGap: lineGap)
+            let metrics = eventLayoutMetrics(
+                for: event,
+                baseSpacing: baseSpacing,
+                noteHeadWidth: noteHeadWidth,
+                lineGap: lineGap,
+                accidentalSymbolWidth: accidentalSymbolWidth,
+                accidentalSymbolSpacing: accidentalSymbolSpacing,
+                accidentalNoteGap: accidentalNoteGap
+            )
+            return partialResult + horizontalSpacing(for: metrics, baseSpacing: baseSpacing)
         }
     }
 
@@ -225,14 +319,32 @@ private struct StaffCanvas: View {
             let noteHeadHeight = lineGap * 0.74
             let stemHeight = lineGap * 3.4
             let stemWidth: CGFloat = 1.5
+            let sharpBaseFont = UIFont.systemFont(ofSize: lineGap * 1.2, weight: .semibold)
+            let sharpDescriptor = sharpBaseFont.fontDescriptor.withDesign(.serif) ?? sharpBaseFont.fontDescriptor
+            let sharpFont = UIFont(descriptor: sharpDescriptor, size: lineGap * 1.2)
+            let sharpMetrics = glyphMetrics(for: "♯", font: sharpFont)
+            let sharpWidth = max(sharpMetrics.bounds.width, sharpMetrics.lineSize.width)
+            let sharpSpacing = max(1, sharpWidth * 0.08)
+            let sharpNoteGap = max(0, lineGap * 0.35 - 2)
             
             let noteStartX = max(clefLeftX + trebleClefWidth, clefLeftX + bassClefWidth) + 10
             let noteEndX = width - margin
             let baseNoteSpacing = lineGap * 2
             let events = renderedEvents.isEmpty ? queue.events : renderedEvents
             let eventIDs = queue.events.map(\.id)
-            let eventSpacings = events.map {
-                horizontalSpacing(for: $0, baseSpacing: baseNoteSpacing, lineGap: lineGap)
+            let eventMetrics = events.map {
+                eventLayoutMetrics(
+                    for: $0,
+                    baseSpacing: baseNoteSpacing,
+                    noteHeadWidth: noteHeadWidth,
+                    lineGap: lineGap,
+                    accidentalSymbolWidth: sharpWidth,
+                    accidentalSymbolSpacing: sharpSpacing,
+                    accidentalNoteGap: sharpNoteGap
+                )
+            }
+            let eventSpacings = eventMetrics.map {
+                horizontalSpacing(for: $0, baseSpacing: baseNoteSpacing)
             }
             let staffStartX = barLineX
             ZStack {
@@ -286,16 +398,22 @@ private struct StaffCanvas: View {
                 ZStack {
                     ForEach(Array(events.enumerated()), id: \.element.id) { (index, event) in
                         let newerEventSpacing = eventSpacings.dropFirst(index + 1).reduce(CGFloat(0), +)
-                        let noteX = noteEndX + slideOffset - newerEventSpacing - baseNoteSpacing * 0.5
+                        let layoutMetrics = eventMetrics[index]
+                        let slotRight = noteEndX + slideOffset - newerEventSpacing
+                        let noteX = slotRight - layoutMetrics.rightExtent
                         let chord = chordNotes(for: event.notes)
                         let stemUp = stemGoesUp(for: chord)
                         let ledgerLineSteps = Array(Set(chord.flatMap { ledgerSteps(for: $0.step) })).sorted()
                         let hasDisplacedNote = chord.contains { $0.isDisplaced }
                         let blackKeyNotes = chord.filter { $0.note.isBlackKey }
                         let ledgerWidth = noteHeadWidth * (hasDisplacedNote ? 3.0 : 2.15)
-                        let accidentalWidth = blackKeyNotes.isEmpty ? 0 : lineGap * (1.2 + CGFloat(blackKeyNotes.count - 1) * 0.32)
-                        let leftEdge = noteX - ledgerWidth / 2 - accidentalWidth - lineGap * 0.35
-                        let rightEdge = noteX + ledgerWidth / 2 + lineGap * 0.45
+                        let accidentalSpan = accidentalWidth(
+                            for: blackKeyNotes.count,
+                            symbolWidth: sharpWidth,
+                            symbolSpacing: sharpSpacing
+                        )
+                        let leftEdge = noteX - layoutMetrics.leftExtent
+                        let rightEdge = noteX + layoutMetrics.rightExtent
 
                         if rightEdge >= noteStartX && leftEdge <= noteEndX {
                             ForEach(ledgerLineSteps, id: \.self) { ledgerStep in
@@ -334,7 +452,7 @@ private struct StaffCanvas: View {
                                     .font(.system(size: lineGap * 1.2, weight: .semibold, design: .serif))
                                     .foregroundStyle(Color(red: 0.13, green: 0.18, blue: 0.27))
                                     .position(
-                                        x: noteX - lineGap * (1.15 + CGFloat(accidentalIndex) * 0.34),
+                                        x: noteX - noteHeadWidth / 2 - sharpNoteGap - sharpWidth / 2 - CGFloat(accidentalIndex) * (sharpWidth + sharpSpacing),
                                         y: yFor(step: chordNote.step, top: topPad, stepSize: stepSize) - 2
                                     )
                             }
@@ -357,7 +475,11 @@ private struct StaffCanvas: View {
                     from: renderedEvents,
                     to: queue.events,
                     baseSpacing: baseNoteSpacing,
-                    lineGap: lineGap
+                    noteHeadWidth: noteHeadWidth,
+                    lineGap: lineGap,
+                    accidentalSymbolWidth: sharpWidth,
+                    accidentalSymbolSpacing: sharpSpacing,
+                    accidentalNoteGap: sharpNoteGap
                 )
 
                 if incomingWidth > 0 {
@@ -383,7 +505,11 @@ private struct StaffCanvas: View {
                     for: queue.events,
                     availableWidth: noteEndX - noteStartX,
                     baseSpacing: baseNoteSpacing,
-                    lineGap: lineGap
+                    noteHeadWidth: noteHeadWidth,
+                    lineGap: lineGap,
+                    accidentalSymbolWidth: sharpWidth,
+                    accidentalSymbolSpacing: sharpSpacing,
+                    accidentalNoteGap: sharpNoteGap
                 )
 
                 if queue.events.count > queueMaxVisible {
