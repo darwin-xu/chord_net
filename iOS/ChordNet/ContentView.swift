@@ -109,7 +109,7 @@ struct ContentView: View {
 
             Text(controlCaption)
                 .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.secondary)
+                .foregroundStyle(Color.gray)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
 
@@ -170,7 +170,7 @@ struct ContentView: View {
     }
 
     private var statusColor: Color {
-        engine.isRunning ? Color(red: 0.24, green: 0.42, blue: 0.67) : Color.secondary
+        engine.isRunning ? Color(red: 0.24, green: 0.42, blue: 0.67) : Color.gray
     }
 
     private var controlCaption: String {
