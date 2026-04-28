@@ -1,0 +1,29 @@
+[tool.ruff]
+indent-width = 4
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.format]
+indent-style = "space"
+indent-width = 4
+quote-style = "double"
+line-ending = "lf"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+# E1: indentation errors
+# W1: indentation warnings
+
+[tool.black]
+line-length = 100
+indent-width = 4
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+indent = "    "
+
+[tool.autopep8]
+indent-size = 4
+max-line-length = 100

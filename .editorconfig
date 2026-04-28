@@ -1,0 +1,33 @@
+# EditorConfig: https://editorconfig.org
+# Apply 4-space indentation across the entire project.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+tab_width = 4
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+[*.{yml,yaml}]
+indent_size = 4
+
+[*.swift]
+indent_size = 4
+
+[*.py]
+indent_size = 4
+
+[*.{json,jsonc}]
+indent_size = 4
+
+[*.{md,markdown}]
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab
+
+[*.sh]
+indent_size = 4

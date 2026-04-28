@@ -1,0 +1,18 @@
+{
+    "version": 1,
+    "indentation": "spaces",
+    "tabWidth": 4,
+    "indentConditionalCompilationBlocks": true,
+    "indentSwitchCaseLabels": false,
+    "lineLength": 100,
+    "maximumBlankLines": 1,
+    "respectsExistingLineBreaks": true,
+    "lineBreakAroundMultilineExpressionChainComponents": false,
+    "lineBreakBeforeEachArgument": true,
+    "lineBreakBeforeEachGenericRequirement": true,
+    "prioritizeKeepingFunctionOutputTogether": false,
+    "spacesAroundRangeFormationOperators": false,
+    "fileScopedDeclarationPrivacy": {
+        "accessLevel": "private"
+    }
+}
