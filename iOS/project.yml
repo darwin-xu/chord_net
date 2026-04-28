@@ -1,0 +1,73 @@
+# XcodeGen project spec for ChordNet iOS app.
+#
+# Regenerate the Xcode project:
+#   cd iOS && xcodegen generate
+
+name: ChordNet
+
+options:
+  bundleIdPrefix: com.chordnet
+  deploymentTarget:
+    iOS: "17.6"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: targeted
+
+targets:
+  ChordNet:
+    type: application
+    platform: iOS
+    sources:
+      - path: ChordNet
+    settings:
+      base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_IDENTITY: iPhone Developer
+        CURRENT_PROJECT_VERSION: "1"
+        DEVELOPMENT_TEAM: 822G9ZB5X6
+        INFOPLIST_FILE: ChordNet/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: CN
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        PRODUCT_BUNDLE_IDENTIFIER: com.chordnet.app
+        TARGETED_DEVICE_FAMILY: "1"
+        MARKETING_VERSION: "1.0"
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUG DESIGN_MODE"
+
+  ChordNetTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ChordNetTests
+    dependencies:
+      - target: ChordNet
+    settings:
+      base:
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 822G9ZB5X6
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.chordnet.app.tests
+        TARGETED_DEVICE_FAMILY: "1"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/ChordNet.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ChordNet"
+
+schemes:
+  ChordNet:
+    build:
+      targets:
+        ChordNet: all
+        ChordNetTests: [test]
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - ChordNetTests
+    run:
+      config: Debug
+    archive:
+      config: Release

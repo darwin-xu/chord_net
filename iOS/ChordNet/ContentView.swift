@@ -24,12 +24,16 @@ struct ContentView: View {
                     headline: waveformHeadline,
                     style: waveformStyle
                 )
+                .frame(height: waveformHeight(for: geometry.size.height))
+                .designSectionBorder()
 
                 StaffNoteView(queue: staffNoteQueue)
                     .frame(height: geometry.size.height * staffHeightRatio)
+                    .designSectionBorder()
 
                 PianoKeyboardView(activeMIDINotes: activeMIDINotes)
                     .frame(height: geometry.size.height * 0.24)
+                    .designSectionBorder()
 
 #if STAFF_INPUT_MODE
                 staffInputPanel
@@ -74,8 +78,9 @@ struct ContentView: View {
                 Spacer()
             }
         }
-        .frame(height: 64)
+        .frame(height: 44)
         .background(Color.white.opacity(0.92))
+        .designSectionBorder()
     }
 
     private var controlsPanel: some View {
@@ -122,6 +127,7 @@ struct ContentView: View {
                 .shadow(color: Color.black.opacity(0.08), radius: 14, y: -4)
                 .ignoresSafeArea(edges: .bottom)
         )
+        .designSectionBorder()
     }
 
     private func circularControl(colors: [Color], shadowColor: Color, systemImage: String) -> some View {
@@ -180,6 +186,10 @@ struct ContentView: View {
         return engine.statusMessage
     }
 
+    private func waveformHeight(for screenHeight: CGFloat) -> CGFloat {
+        min(max(screenHeight * 0.13, 88), 130)
+    }
+
 #if STAFF_INPUT_MODE
     private var staffInputPanel: some View {
         HStack(spacing: 12) {
@@ -230,6 +240,7 @@ struct ContentView: View {
         .padding(.horizontal, 14)
         .frame(height: 44)
         .background(Color.white.opacity(0.86))
+        .designSectionBorder()
     }
 
     private func handleStaffInput(_ key: StaffInputKey) {
@@ -254,51 +265,29 @@ struct ContentView: View {
 #endif
 }
 
-private extension PianoNote {
-    init?(chordNetName: String) {
-        guard let midi = Self.midiNumber(from: chordNetName) else { return nil }
-        let frequency = 440.0 * pow(2.0, Double(midi - 69) / 12.0)
-        self.init(midiNumber: midi, frequency: frequency, centsOffset: 0)
-    }
+private extension View {
+    @ViewBuilder
+    func designSectionBorder() -> some View {
+#if DESIGN_MODE
+        self.overlay {
+            GeometryReader { geometry in
+                ZStack(alignment: .topLeading) {
+                    Rectangle()
+                        .stroke(Color.red, lineWidth: 1)
 
-    static func midiNumber(from noteName: String) -> Int? {
-        let semitones = [
-            "C": 0,
-            "C#": 1,
-            "D": 2,
-            "D#": 3,
-            "E": 4,
-            "F": 5,
-            "F#": 6,
-            "G": 7,
-            "G#": 8,
-            "A": 9,
-            "A#": 10,
-            "B": 11,
-        ]
-
-        let pitchClass: String
-        let octaveText: Substring
-
-        if noteName.count >= 2, noteName.dropFirst().first == "#" {
-            pitchClass = String(noteName.prefix(2))
-            octaveText = noteName.dropFirst(2)
-        } else {
-            pitchClass = String(noteName.prefix(1))
-            octaveText = noteName.dropFirst()
+                    Text("\(Int(geometry.size.width)) x \(Int(geometry.size.height))")
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(Color.red.opacity(0.88))
+                }
+                .allowsHitTesting(false)
+            }
         }
-
-        guard let semitone = semitones[pitchClass],
-              let octave = Int(octaveText)
-        else {
-            return nil
-        }
-
-        let midi = (octave + 1) * 12 + semitone
-        guard (minimumMIDINote...maximumMIDINote).contains(midi) else {
-            return nil
-        }
-        return midi
+#else
+        self
+#endif
     }
 }
 

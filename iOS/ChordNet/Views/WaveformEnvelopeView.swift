@@ -43,9 +43,8 @@ struct WaveformEnvelopeView: View {
             .frame(maxHeight: .infinity)
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 18)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity)
-        .frame(height: 150)
         .background(background)
         .overlay(alignment: .bottom) {
             Rectangle()
