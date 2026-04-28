@@ -11,10 +11,21 @@ struct ContentView: View {
 #endif
 
     private let waveformStyle: WaveformEnvelopeView.Style = .neonThreads
-    private let staffHeightRatio: CGFloat = 0.35
+    private let statusBarHeight: CGFloat = 44
+    private let baselineWaveformHeight: CGFloat = 88
+    private let baselineStaffHeight: CGFloat = 226
+    private let baselineKeyboardHeight: CGFloat = 155
+    private let controlsHeight: CGFloat = 158
+#if STAFF_INPUT_MODE
+    private let staffInputHeight: CGFloat = 44
+#else
+    private let staffInputHeight: CGFloat = 0
+#endif
 
     var body: some View {
         GeometryReader { geometry in
+            let layout = layoutMetrics(for: geometry.size.height)
+
             VStack(spacing: 0) {
                 statusBar
 
@@ -24,15 +35,18 @@ struct ContentView: View {
                     headline: waveformHeadline,
                     style: waveformStyle
                 )
-                .frame(height: waveformHeight(for: geometry.size.height))
+                .frame(height: layout.waveformHeight)
+                .clipped()
                 .designSectionBorder()
 
                 StaffNoteView(queue: staffNoteQueue)
-                    .frame(height: geometry.size.height * staffHeightRatio)
+                    .frame(height: layout.staffHeight)
+                    .clipped()
                     .designSectionBorder()
 
                 PianoKeyboardView(activeMIDINotes: activeMIDINotes)
-                    .frame(height: geometry.size.height * 0.24)
+                    .frame(height: layout.keyboardHeight)
+                    .clipped()
                     .designSectionBorder()
 
 #if STAFF_INPUT_MODE
@@ -40,9 +54,11 @@ struct ContentView: View {
 #endif
 
                 controlsPanel
+                    .frame(height: layout.controlsHeight)
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
         }
+        .ignoresSafeArea(edges: .bottom)
         .background(
             LinearGradient(
                 colors: [
@@ -78,7 +94,7 @@ struct ContentView: View {
                 Spacer()
             }
         }
-        .frame(height: 44)
+        .frame(height: statusBarHeight)
         .background(Color.white.opacity(0.92))
         .designSectionBorder()
     }
@@ -122,7 +138,7 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
+            Rectangle()
                 .fill(Color.white.opacity(0.55))
                 .shadow(color: Color.black.opacity(0.08), radius: 14, y: -4)
                 .ignoresSafeArea(edges: .bottom)
@@ -186,8 +202,30 @@ struct ContentView: View {
         return engine.statusMessage
     }
 
-    private func waveformHeight(for screenHeight: CGFloat) -> CGFloat {
-        min(max(screenHeight * 0.13, 88), 130)
+    private func layoutMetrics(for screenHeight: CGFloat) -> LayoutMetrics {
+        let baselineHeight = statusBarHeight
+            + baselineWaveformHeight
+            + baselineStaffHeight
+            + baselineKeyboardHeight
+            + controlsHeight
+            + staffInputHeight
+
+        guard screenHeight > baselineHeight else {
+            return LayoutMetrics(
+                waveformHeight: baselineWaveformHeight,
+                staffHeight: baselineStaffHeight,
+                keyboardHeight: baselineKeyboardHeight,
+                controlsHeight: controlsHeight
+            )
+        }
+
+        let extraHeight = screenHeight - baselineHeight
+        return LayoutMetrics(
+            waveformHeight: baselineWaveformHeight + extraHeight * 0.10,
+            staffHeight: baselineStaffHeight + extraHeight * 0.60,
+            keyboardHeight: baselineKeyboardHeight + extraHeight * 0.30,
+            controlsHeight: controlsHeight
+        )
     }
 
 #if STAFF_INPUT_MODE
@@ -263,6 +301,13 @@ struct ContentView: View {
         staffInput.clear()
     }
 #endif
+}
+
+private struct LayoutMetrics {
+    let waveformHeight: CGFloat
+    let staffHeight: CGFloat
+    let keyboardHeight: CGFloat
+    let controlsHeight: CGFloat
 }
 
 private extension View {
