@@ -221,8 +221,8 @@ struct ContentView: View {
 
         let extraHeight = screenHeight - baselineHeight
         return LayoutMetrics(
-            waveformHeight: baselineWaveformHeight + extraHeight * 0.10,
-            staffHeight: baselineStaffHeight + extraHeight * 0.60,
+            waveformHeight: baselineWaveformHeight + extraHeight * 0.30,
+            staffHeight: baselineStaffHeight + extraHeight * 0.40,
             keyboardHeight: baselineKeyboardHeight + extraHeight * 0.30,
             controlsHeight: controlsHeight
         )
